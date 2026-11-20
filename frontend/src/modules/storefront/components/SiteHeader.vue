@@ -15,6 +15,7 @@ import {
     SheetTrigger,
 } from '@shared/components/ui/sheet';
 import { dashboard, home, login, register } from '@/routes';
+import { dashboard as adminDashboard } from '@/routes/admin';
 import type {
     AnnouncementBanner,
     CategorySummary,
@@ -44,6 +45,9 @@ const emit = defineEmits<{
 
 const page = usePage();
 const user = computed(() => page.props.auth?.user);
+const canAccessAdmin = computed(
+    () => user.value?.role === 'staff' || user.value?.role === 'admin',
+);
 const mobileMenuOpen = ref(false);
 
 function handleMobileCategory(slug: string | null): void {
@@ -146,6 +150,20 @@ function handleMobileCategory(slug: string | null): void {
                             <div class="mt-8 border-t border-border pt-6">
                                 <div v-if="user" class="space-y-2">
                                     <Button
+                                        v-if="canAccessAdmin"
+                                        as-child
+                                        variant="outline"
+                                        class="h-11 w-full justify-start gap-2"
+                                    >
+                                        <Link :href="adminDashboard()">
+                                            <ShieldCheck
+                                                class="size-4 text-primary"
+                                                aria-hidden="true"
+                                            />
+                                            <span>Admin Back-Office</span>
+                                        </Link>
+                                    </Button>
+                                    <Button
                                         as-child
                                         variant="default"
                                         class="h-11 w-full justify-start gap-2"
@@ -195,6 +213,20 @@ function handleMobileCategory(slug: string | null): void {
                 <!-- Right: Account & Cart actions -->
                 <div class="flex items-center gap-2 sm:gap-3">
                     <template v-if="user">
+                        <Button
+                            v-if="canAccessAdmin"
+                            as-child
+                            variant="outline"
+                            class="hidden h-11 gap-2 rounded-full border-primary/40 px-4 text-xs font-semibold sm:inline-flex"
+                        >
+                            <Link :href="adminDashboard()">
+                                <ShieldCheck
+                                    class="size-4 text-primary"
+                                    aria-hidden="true"
+                                />
+                                <span>Admin</span>
+                            </Link>
+                        </Button>
                         <Button
                             as-child
                             variant="ghost"

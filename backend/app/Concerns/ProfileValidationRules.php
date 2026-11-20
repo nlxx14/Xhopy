@@ -19,7 +19,16 @@ trait ProfileValidationRules
         return [
             'name' => $this->nameRules(),
             'email' => $this->emailRules($userId),
+            'phone' => $this->phoneRules(),
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function phoneRules(): array
+    {
+        return ['nullable', 'string', 'max:32', 'regex:/^[0-9+\-\s()]{7,32}$/'];
     }
 
     /**

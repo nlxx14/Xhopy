@@ -5,6 +5,7 @@ import { Button } from '@shared/components/ui/button';
 import { Separator } from '@shared/components/ui/separator';
 import { useCurrentUrl } from '@shared/composables/useCurrentUrl';
 import { toUrl } from '@shared/lib/utils';
+import { index as editAddresses } from '@/routes/addresses';
 import { edit as editAppearance } from '@/routes/appearance';
 import { edit as editProfile } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
@@ -14,6 +15,10 @@ const sidebarNavItems: NavItem[] = [
     {
         title: 'Profile',
         href: editProfile(),
+    },
+    {
+        title: 'Addresses',
+        href: editAddresses(),
     },
     {
         title: 'Security',

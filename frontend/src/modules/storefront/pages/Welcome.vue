@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import { ArrowRight, Eye, Layers, ShoppingBag, Sparkles } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import CategoryCard from '@modules/storefront/components/CategoryCard.vue';
@@ -23,6 +23,9 @@ import {
 } from '@shared/components/ui/dialog';
 import StorefrontLayout from '@modules/storefront/layouts/StorefrontLayout.vue';
 import { home } from '@/routes';
+import { index as cartIndex } from '@/routes/cart';
+import { store as storeCartItem } from '@/routes/cart/items';
+import { index as productsIndex } from '@/routes/products';
 import type { CartSummary } from '@modules/cart';
 import type { StorefrontHomeProps } from '@modules/storefront/types';
 
@@ -82,6 +85,14 @@ function handleSelectCategory(slug: string | null): void {
 function handleAddToCart(product: ProductSummary): void {
     localCartCount.value += 1;
     lastSelectedProduct.value = product;
+
+    if (!props.isDemoPreview && typeof product.id === 'number') {
+        router.post(
+            storeCartItem.url(),
+            { product_id: product.id, quantity: 1 },
+            { preserveScroll: true, preserveState: true },
+        );
+    }
 }
 
 function clearFilters(): void {
@@ -273,24 +284,41 @@ function clearFilters(): void {
                         </h2>
                     </div>
 
-                    <p
-                        v-if="searchQuery || selectedCategory"
-                        class="text-sm text-muted-foreground"
-                    >
-                        Showing filtered results
-                        <span v-if="searchQuery">
-                            for
-                            <strong class="text-foreground"
-                                >"{{ searchQuery }}"</strong
-                            >
-                        </span>
-                        <span v-if="selectedCategory">
-                            in
-                            <strong class="text-foreground">{{
-                                selectedCategory
-                            }}</strong>
-                        </span>
-                    </p>
+                    <div class="flex flex-wrap items-center gap-4">
+                        <p
+                            v-if="searchQuery || selectedCategory"
+                            class="text-sm text-muted-foreground"
+                        >
+                            Showing filtered results
+                            <span v-if="searchQuery">
+                                for
+                                <strong class="text-foreground"
+                                    >"{{ searchQuery }}"</strong
+                                >
+                            </span>
+                            <span v-if="selectedCategory">
+                                in
+                                <strong class="text-foreground">{{
+                                    selectedCategory
+                                }}</strong>
+                            </span>
+                        </p>
+
+                        <Link
+                            :href="
+                                productsIndex.url({
+                                    query: {
+                                        q: searchQuery || undefined,
+                                        category: selectedCategory || undefined,
+                                    },
+                                })
+                            "
+                            class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                        >
+                            <span>View full catalog</span>
+                            <ArrowRight class="size-3.5" aria-hidden="true" />
+                        </Link>
+                    </div>
                 </div>
 
                 <div
@@ -301,6 +329,7 @@ function clearFilters(): void {
                         v-for="product in filteredProducts"
                         :key="product.id"
                         :product="product"
+                        :linkable="!isDemoPreview"
                         @add-to-cart="handleAddToCart"
                     />
                 </div>
@@ -369,7 +398,7 @@ function clearFilters(): void {
                     </p>
                 </div>
 
-                <DialogFooter>
+                <DialogFooter class="gap-2">
                     <Button
                         type="button"
                         variant="outline"
@@ -377,6 +406,14 @@ function clearFilters(): void {
                         @click="cartDialogOpen = false"
                     >
                         Continue Shopping
+                    </Button>
+                    <Button v-if="!isDemoPreview" as-child class="h-11">
+                        <Link
+                            :href="cartIndex.url()"
+                            @click="cartDialogOpen = false"
+                        >
+                            View Full Cart
+                        </Link>
                     </Button>
                 </DialogFooter>
             </DialogContent>

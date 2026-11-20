@@ -9,4 +9,18 @@ export { default as TwoFactorSetupModal } from './components/TwoFactorSetupModal
 export { useTwoFactorAuth } from './composables/useTwoFactorAuth';
 export { default as AuthLayout } from './layouts/AuthLayout.vue';
 export { default as SettingsLayout } from './layouts/SettingsLayout.vue';
-export type { Auth, Passkey, TwoFactorConfigContent, User } from './types';
+export type {
+    Auth,
+    BrowserSession,
+    CustomerAddress,
+    OrderDetail,
+    OrderLineItemSnapshot,
+    OrderPaymentInfo,
+    OrderSummary,
+    OrderTimelineEntry,
+    Passkey,
+    SecurityAuditEvent,
+    TwoFactorConfigContent,
+    User,
+    UserRole,
+} from './types';

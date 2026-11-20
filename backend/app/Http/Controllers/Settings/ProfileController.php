@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Domain\Identity\Enums\AuditEvent;
+use App\Domain\Identity\Services\AccountAuditRecorder;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
@@ -28,15 +30,26 @@ class ProfileController extends Controller
     /**
      * Update the user's profile information.
      */
-    public function update(ProfileUpdateRequest $request): RedirectResponse
+    public function update(ProfileUpdateRequest $request, AccountAuditRecorder $audit): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $user->fill($request->validated());
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
+        $emailChanged = $user->isDirty('email');
+
+        if ($emailChanged) {
+            $user->email_verified_at = null;
+            $user->email_verification_code = null;
+            $user->email_verification_code_expires_at = null;
         }
 
-        $request->user()->save();
+        $user->save();
+
+        $audit->record(AuditEvent::ProfileUpdated, $user, null, $user, $request);
+
+        if ($emailChanged) {
+            $audit->record(AuditEvent::EmailChanged, $user, ['email' => $user->email], $user, $request);
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
@@ -46,9 +59,11 @@ class ProfileController extends Controller
     /**
      * Delete the user's profile.
      */
-    public function destroy(ProfileDeleteRequest $request): RedirectResponse
+    public function destroy(ProfileDeleteRequest $request, AccountAuditRecorder $audit): RedirectResponse
     {
         $user = $request->user();
+
+        $audit->record(AuditEvent::AccountDeleted, $user, ['deleted_user_id' => $user->id], $user, $request);
 
         Auth::logout();
 

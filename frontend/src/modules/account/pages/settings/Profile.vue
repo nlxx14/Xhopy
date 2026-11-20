@@ -73,6 +73,20 @@ const user = computed(() => page.props.auth.user);
                 <InputError class="mt-2" :message="errors.email" />
             </div>
 
+            <div class="grid gap-2">
+                <Label for="phone">Phone number (optional)</Label>
+                <Input
+                    id="phone"
+                    type="tel"
+                    class="mt-1 block w-full"
+                    name="phone"
+                    :default-value="user.phone ?? ''"
+                    autocomplete="tel"
+                    placeholder="+63 917 555 0199"
+                />
+                <InputError class="mt-2" :message="errors.phone" />
+            </div>
+
             <div v-if="page.props.mustVerifyEmail && !user.email_verified_at">
                 <p class="-mt-4 text-sm text-muted-foreground">
                     Your email address is unverified.

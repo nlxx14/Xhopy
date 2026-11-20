@@ -4,6 +4,7 @@ export interface ProductSummary {
     slug: string;
     sku?: string | null;
     categoryName?: string | null;
+    categorySlug?: string | null;
     sellerName?: string | null;
     unitPrice: number;
     priceFormatted: string;
@@ -15,8 +16,22 @@ export interface ProductSummary {
     stockLabel: string;
     imageUrl?: string | null;
     imageAlt: string;
+    isWishlisted?: boolean;
+    addedAtDiff?: string;
     ratingAverage?: number | null;
     ratingCount?: number | null;
+}
+
+export interface ProductImage {
+    id: number;
+    url: string | null;
+    alt: string;
+}
+
+export interface ProductDetail extends ProductSummary {
+    shortDescription?: string | null;
+    description?: string | null;
+    images: ProductImage[];
 }
 
 export interface PaginationMeta {
@@ -24,4 +39,26 @@ export interface PaginationMeta {
     lastPage: number;
     perPage: number;
     total: number;
+}
+
+export interface SortOption {
+    value: string;
+    label: string;
+}
+
+export interface CatalogFilterState {
+    q: string;
+    category: string | null;
+    minPrice: string | null;
+    maxPrice: string | null;
+    inStock: boolean;
+    sort: string;
+    perPage: number;
+}
+
+export interface FilterableCategory {
+    id: number | string;
+    name: string;
+    slug: string;
+    productCount?: number | null;
 }

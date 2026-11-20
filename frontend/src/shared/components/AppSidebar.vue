@@ -1,8 +1,17 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid } from '@lucide/vue';
+import { Link, usePage } from '@inertiajs/vue3';
+import {
+    Boxes,
+    ClipboardList,
+    LayoutGrid,
+    Package,
+    ShieldCheck,
+    ShoppingBag,
+    Store,
+    Users,
+} from '@lucide/vue';
+import { computed } from 'vue';
 import AppLogo from '@shared/components/AppLogo.vue';
-import NavFooter from '@shared/components/NavFooter.vue';
 import NavMain from '@shared/components/NavMain.vue';
 import NavUser from '@shared/components/NavUser.vue';
 import {
@@ -14,29 +23,74 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@shared/components/ui/sidebar';
-import { dashboard } from '@/routes';
+import { dashboard, home } from '@/routes';
+import { dashboard as adminDashboard } from '@/routes/admin';
+import { index as adminCustomersIndex } from '@/routes/admin/customers';
+import { index as adminOrdersIndex } from '@/routes/admin/orders';
+import { index as adminProductsIndex } from '@/routes/admin/products';
+import { index as cartIndex } from '@/routes/cart';
+import { index as ordersIndex } from '@/routes/orders';
 import type { NavItem } from '@shared/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-];
+const page = usePage();
 
-const footerNavItems: NavItem[] = [
-    {
-        title: 'Repository',
-        href: 'https://github.com/laravel/vue-starter-kit',
-        icon: FolderGit2,
-    },
-    {
-        title: 'Documentation',
-        href: 'https://laravel.com/docs/starter-kits#vue',
-        icon: BookOpen,
-    },
-];
+const isStaffOrAdmin = computed(() => {
+    const role = page.props.auth?.user?.role;
+
+    return role === 'staff' || role === 'admin';
+});
+
+const mainNavItems = computed<NavItem[]>(() => {
+    const items: NavItem[] = [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: 'My Orders',
+            href: ordersIndex(),
+            icon: Package,
+        },
+        {
+            title: 'Shopping Cart',
+            href: cartIndex(),
+            icon: ShoppingBag,
+        },
+        {
+            title: 'Storefront',
+            href: home(),
+            icon: Store,
+        },
+    ];
+
+    if (isStaffOrAdmin.value) {
+        items.push(
+            {
+                title: 'Admin Overview',
+                href: adminDashboard(),
+                icon: ShieldCheck,
+            },
+            {
+                title: 'Catalog & Inventory',
+                href: adminProductsIndex(),
+                icon: Boxes,
+            },
+            {
+                title: 'Order Fulfillment',
+                href: adminOrdersIndex(),
+                icon: ClipboardList,
+            },
+            {
+                title: 'Customers & Audit',
+                href: adminCustomersIndex(),
+                icon: Users,
+            },
+        );
+    }
+
+    return items;
+});
 </script>
 
 <template>
@@ -58,7 +112,6 @@ const footerNavItems: NavItem[] = [
         </SidebarContent>
 
         <SidebarFooter>
-            <NavFooter :items="footerNavItems" />
             <NavUser />
         </SidebarFooter>
     </Sidebar>
