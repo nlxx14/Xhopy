@@ -7,7 +7,9 @@ use App\Domain\Catalog\Enums\ProductStatus;
 use App\Domain\Catalog\Models\CampaignContent;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Inventory\Services\InventoryService;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -120,6 +122,10 @@ class CatalogDemoSeeder extends Seeder
                     'is_active' => true,
                 ],
             );
+        }
+
+        if (Schema::hasTable('stock_movements')) {
+            app(InventoryService::class)->reconcileAll();
         }
     }
 }

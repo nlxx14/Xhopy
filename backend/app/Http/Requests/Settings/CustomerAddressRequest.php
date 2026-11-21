@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Settings;
 
+use App\Domain\Customer\Models\CustomerAddress;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -13,7 +14,19 @@ class CustomerAddressRequest extends FormRequest
 
     public function authorize(): bool
     {
-        return $this->user() !== null;
+        $user = $this->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        $address = $this->route('address');
+
+        if ($address instanceof CustomerAddress) {
+            return $user->can('update', $address);
+        }
+
+        return true;
     }
 
     /**

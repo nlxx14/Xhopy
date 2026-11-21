@@ -212,4 +212,37 @@ test.describe('XHopy Batch 2 Storefront Shell & Design System', () => {
             drawer.getByRole('button', { name: 'All Products' }),
         ).toBeVisible();
     });
+
+    test('catalog listing, login, and health readiness endpoints work with security headers', async ({
+        page,
+        request,
+    }) => {
+        const healthResponse = await request.get('/health/ready');
+        expect(healthResponse.ok()).toBe(true);
+        expect(healthResponse.headers()['x-content-type-options']).toBe(
+            'nosniff',
+        );
+        expect(healthResponse.headers()['x-frame-options']).toBe('SAMEORIGIN');
+        expect(healthResponse.headers()['x-request-id']).toBeTruthy();
+
+        for (const viewport of viewports) {
+            await page.setViewportSize({
+                width: viewport.width,
+                height: viewport.height,
+            });
+            const catalogResponse = await page.goto('/products');
+            expect(catalogResponse?.ok()).toBe(true);
+
+            const hasOverflow = await page.evaluate(
+                () =>
+                    document.documentElement.scrollWidth >
+                    document.documentElement.clientWidth,
+            );
+            expect(hasOverflow).toBe(false);
+        }
+
+        const loginResponse = await page.goto('/login');
+        expect(loginResponse?.ok()).toBe(true);
+        await expect(page.getByLabel(/Email address/i)).toBeVisible();
+    });
 });

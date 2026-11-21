@@ -157,4 +157,24 @@ final class InventoryService
 
         return $reconciledCount;
     }
+
+    /**
+     * Count products whose recorded stock_quantity currently differs from their stock_movements sum.
+     */
+    public function countDiscrepancies(): int
+    {
+        $discrepancyCount = 0;
+
+        foreach (Product::query()->orderBy('id')->get() as $product) {
+            $ledgerSum = (int) StockMovement::query()
+                ->where('product_id', $product->id)
+                ->sum('quantity_delta');
+
+            if ($product->stock_quantity !== $ledgerSum) {
+                $discrepancyCount++;
+            }
+        }
+
+        return $discrepancyCount;
+    }
 }

@@ -111,3 +111,28 @@ npm run types:check          # Strict TypeScript check (vue-tsc --noEmit)
 npm run build                # Production bundle build (outputs to ../backend/public/build)
 npm run test:e2e             # Playwright browser E2E smoke tests
 ```
+
+---
+
+## Operations, Security & Launch Readiness
+
+See [`docs/launch-readiness-checklist.md`](docs/launch-readiness-checklist.md) for the full Batch 7 Security Review, Backup/Restore Runbook, and Production Launch Checklist.
+
+```bash
+# Assign a platform role (customer, staff, admin) to an existing account
+cd backend
+php artisan xhopy:user-role user@example.com admin
+
+# Run launch readiness & inventory ledger consistency checks
+php artisan xhopy:launch-check
+
+# Create an AES-256 encrypted, SHA-256 checksummed database backup in private storage
+php artisan xhopy:backup
+
+# Verify backup integrity and run a non-destructive transactional restore simulation
+php artisan xhopy:backup-verify <backup_filename> --restore-test
+```
+
+### Health Probes
+- `GET /up` — Liveness probe
+- `GET /health/ready` — Readiness probe (verifies database, cache, and storage with `X-Request-Id` correlation header)

@@ -12,10 +12,15 @@ use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderController;
 use App\Http\Controllers\Storefront\ProductController;
 use App\Http\Controllers\Storefront\WishlistController;
+use App\Http\Controllers\System\HealthCheckController;
 use App\Http\Controllers\Webhooks\PayMongoWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', HomeController::class)->name('home');
+
+Route::get('health/ready', HealthCheckController::class)
+    ->middleware('throttle:60,1')
+    ->name('health.ready');
 
 Route::get('products', [CatalogController::class, 'index'])->name('products.index');
 Route::get('products/{slug}', [ProductController::class, 'show'])
@@ -23,12 +28,14 @@ Route::get('products/{slug}', [ProductController::class, 'show'])
     ->name('products.show');
 
 Route::get('cart', [CartController::class, 'index'])->name('cart.index');
-Route::post('cart/items', [CartController::class, 'store'])->name('cart.items.store');
-Route::patch('cart/items/{cartItem}', [CartController::class, 'update'])->name('cart.items.update');
-Route::delete('cart/items/{cartItem}', [CartController::class, 'destroy'])->name('cart.items.destroy');
-Route::delete('cart', [CartController::class, 'clear'])->name('cart.clear');
+Route::middleware('throttle:60,1')->group(function () {
+    Route::post('cart/items', [CartController::class, 'store'])->name('cart.items.store');
+    Route::patch('cart/items/{cartItem}', [CartController::class, 'update'])->name('cart.items.update');
+    Route::delete('cart/items/{cartItem}', [CartController::class, 'destroy'])->name('cart.items.destroy');
+    Route::delete('cart', [CartController::class, 'clear'])->name('cart.clear');
+});
 
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', 'throttle:60,1'])->group(function () {
     Route::post('wishlist/toggle', [WishlistController::class, 'toggle'])->name('wishlist.toggle');
     Route::delete('wishlist/{productId}', [WishlistController::class, 'destroy'])
         ->whereNumber('productId')
@@ -52,6 +59,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->where('orderNumber', '[A-Za-z0-9\-]+')
         ->name('orders.show');
     Route::post('orders/{orderNumber}/cancel', [OrderController::class, 'cancel'])
+        ->middleware('throttle:10,1')
         ->where('orderNumber', '[A-Za-z0-9\-]+')
         ->name('orders.cancel');
 
@@ -72,7 +80,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('customers', [AdminCustomerController::class, 'index'])->name('customers.index');
 
         // Admin-only routes (least-privilege: admin only)
-        Route::middleware('role:admin')->group(function () {
+        Route::middleware(['role:admin', 'throttle:30,1'])->group(function () {
             Route::post('products/bulk-status', [AdminCatalogController::class, 'bulkUpdateStatus'])
                 ->name('products.bulk-status');
             Route::post('products/import', [AdminCatalogController::class, 'importCsv'])
