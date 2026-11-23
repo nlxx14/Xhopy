@@ -185,7 +185,12 @@ function handleAddToCart(product: ProductSummary): void {
     if (typeof product.id === 'number') {
         router.post(
             storeCartItem.url(),
-            { product_id: product.id, quantity: 1 },
+            {
+                product_id: product.id,
+                quantity: 1,
+                selected_color: product.selectedColor ?? undefined,
+                selected_size: product.selectedSize ?? undefined,
+            },
             { preserveScroll: true, preserveState: true },
         );
     }

@@ -14,6 +14,12 @@ import {
 import { computed, onBeforeUnmount, ref, type Component } from 'vue';
 import PriceDisplay from '@modules/catalog/components/PriceDisplay.vue';
 import RatingDisplay from '@modules/catalog/components/RatingDisplay.vue';
+import {
+    hasCustomVariantStocks,
+    isOptionOptionInStock,
+    pickInitialVariant,
+    resolveVariantStock,
+} from '@modules/catalog/utils/variantStock';
 import { Badge } from '@shared/components/ui/badge';
 import { Button } from '@shared/components/ui/button';
 import { store as storeCartItemRoute } from '@/routes/cart/items';
@@ -33,9 +39,47 @@ const emit = defineEmits<{
     addToCart: [product: ProductSummary];
 }>();
 
+const initialVariant = pickInitialVariant(props.product);
 const isAdding = ref(false);
 const justAdded = ref(false);
 const statusAnnouncement = ref('');
+const selectedColor = ref<string | null>(initialVariant.color);
+const selectedSize = ref<string | null>(initialVariant.size);
+
+const activeVariantStock = computed<number>(() =>
+    resolveVariantStock(props.product, selectedColor.value, selectedSize.value),
+);
+
+const activeVariantInStock = computed<boolean>(
+    () => props.product.inStock && activeVariantStock.value > 0,
+);
+
+const activeStockBadgeLabel = computed<string>(() => {
+    if (!activeVariantInStock.value) {
+        return 'Out of Stock';
+    }
+    if (hasCustomVariantStocks(props.product)) {
+        return `${activeVariantStock.value} in stock`;
+    }
+    return props.product.stockLabel;
+});
+
+const activeImageUrl = computed<string | null>(() => {
+    if (selectedColor.value && props.product.colorImages) {
+        const exact = props.product.colorImages[selectedColor.value];
+        if (exact) {
+            return exact;
+        }
+        const targetLower = selectedColor.value.toLowerCase();
+        for (const [key, url] of Object.entries(props.product.colorImages)) {
+            if (key.toLowerCase() === targetLower && url) {
+                return url;
+            }
+        }
+    }
+
+    return props.product.imageUrl ?? null;
+});
 
 let addTimer: number | undefined;
 let resetTimer: number | undefined;
@@ -87,7 +131,7 @@ const departmentIcon = computed<Component>(() => {
 });
 
 function handleAddToCart(): void {
-    if (!props.product.inStock || isAdding.value) {
+    if (!activeVariantInStock.value || isAdding.value) {
         return;
     }
 
@@ -99,7 +143,11 @@ function handleAddToCart(): void {
     }
 
     isAdding.value = true;
-    emit('addToCart', props.product);
+    emit('addToCart', {
+        ...props.product,
+        selectedColor: selectedColor.value,
+        selectedSize: selectedSize.value,
+    });
 
     addTimer = window.setTimeout(() => {
         isAdding.value = false;
@@ -128,7 +176,7 @@ function handleToggleWishlist(): void {
 const isBuyingNow = ref(false);
 
 function handleBuyNow(): void {
-    if (!props.product.inStock || isBuyingNow.value) {
+    if (!activeVariantInStock.value || isBuyingNow.value) {
         return;
     }
 
@@ -139,6 +187,8 @@ function handleBuyNow(): void {
             {
                 product_id: props.product.id,
                 quantity: 1,
+                selected_color: selectedColor.value ?? undefined,
+                selected_size: selectedSize.value ?? undefined,
                 buy_now: true,
             },
             {
@@ -170,8 +220,8 @@ function handleBuyNow(): void {
                 class="block size-full"
             >
                 <img
-                    v-if="product.imageUrl"
-                    :src="product.imageUrl"
+                    v-if="activeImageUrl"
+                    :src="activeImageUrl"
                     :alt="linkable ? '' : product.imageAlt"
                     loading="lazy"
                     decoding="async"
@@ -201,15 +251,15 @@ function handleBuyNow(): void {
             <!-- Stock availability badge (server-authoritative) -->
             <div class="absolute top-3 left-3 flex flex-wrap gap-1.5">
                 <Badge
-                    :variant="product.inStock ? 'secondary' : 'outline'"
+                    :variant="activeVariantInStock ? 'secondary' : 'outline'"
                     :class="[
                         'px-2.5 py-0.5 text-[11px] font-medium backdrop-blur-xs',
-                        product.inStock
+                        activeVariantInStock
                             ? 'bg-background/90 text-foreground'
                             : 'bg-background/90 text-muted-foreground',
                     ]"
                 >
-                    {{ product.stockLabel }}
+                    {{ activeStockBadgeLabel }}
                 </Badge>
             </div>
 
@@ -245,10 +295,18 @@ function handleBuyNow(): void {
                     <span v-if="product.categoryName" class="truncate">
                         {{ product.categoryName }}
                     </span>
-                    <RatingDisplay
-                        :rating-average="product.ratingAverage"
-                        :rating-count="product.ratingCount"
-                    />
+                    <div class="flex shrink-0 items-center gap-2">
+                        <span
+                            v-if="product.soldCount && product.soldCount > 0"
+                            class="text-[11px] font-medium text-muted-foreground"
+                        >
+                            {{ product.soldCount }} sold
+                        </span>
+                        <RatingDisplay
+                            :rating-average="product.ratingAverage"
+                            :rating-count="product.ratingCount"
+                        />
+                    </div>
                 </div>
 
                 <h3
@@ -270,6 +328,93 @@ function handleBuyNow(): void {
                 >
                     Sold by {{ product.sellerName }}
                 </p>
+
+                <!-- Color & Size quick selectors when product defines options -->
+                <div
+                    v-if="
+                        (product.availableColors &&
+                            product.availableColors.length > 0) ||
+                        (product.availableSizes &&
+                            product.availableSizes.length > 0)
+                    "
+                    class="mt-2.5 space-y-2"
+                >
+                    <div
+                        v-if="
+                            product.availableColors &&
+                            product.availableColors.length > 0
+                        "
+                        class="space-y-1"
+                    >
+                        <p
+                            class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+                        >
+                            Color:
+                            <span class="text-foreground">{{
+                                selectedColor
+                            }}</span>
+                        </p>
+                        <div class="flex flex-wrap gap-1">
+                            <button
+                                v-for="color in product.availableColors"
+                                :key="color"
+                                type="button"
+                                :class="[
+                                    'rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                                    selectedColor === color
+                                        ? 'border-primary bg-brand-subtle/60 text-primary'
+                                        : 'border-border bg-secondary/40 text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                                    !isOptionOptionInStock(
+                                        product,
+                                        'color',
+                                        color,
+                                    ) && 'line-through opacity-50',
+                                ]"
+                                @click="selectedColor = color"
+                            >
+                                {{ color }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        v-if="
+                            product.availableSizes &&
+                            product.availableSizes.length > 0
+                        "
+                        class="space-y-1"
+                    >
+                        <p
+                            class="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase"
+                        >
+                            Size:
+                            <span class="text-foreground">{{
+                                selectedSize
+                            }}</span>
+                        </p>
+                        <div class="flex flex-wrap gap-1">
+                            <button
+                                v-for="size in product.availableSizes"
+                                :key="size"
+                                type="button"
+                                :class="[
+                                    'rounded-md border px-2 py-0.5 text-[11px] font-medium transition-colors',
+                                    selectedSize === size
+                                        ? 'border-primary bg-brand-subtle/60 text-primary'
+                                        : 'border-border bg-secondary/40 text-muted-foreground hover:border-primary/40 hover:text-foreground',
+                                    !isOptionOptionInStock(
+                                        product,
+                                        'size',
+                                        size,
+                                    ) && 'line-through opacity-50',
+                                ]"
+                                @click="selectedSize = size"
+                            >
+                                {{ size }}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="mt-4 space-y-3 border-t border-border/50 pt-3">
@@ -279,7 +424,7 @@ function handleBuyNow(): void {
                     :discount-label="product.discountLabel"
                 />
 
-                <div v-if="product.inStock" class="grid grid-cols-2 gap-2">
+                <div v-if="activeVariantInStock" class="grid grid-cols-2 gap-2">
                     <Button
                         type="button"
                         variant="outline"

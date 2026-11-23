@@ -127,11 +127,21 @@ final class PlaceOrderAction
                     ]);
                 }
 
-                if ($product->stock_quantity < $cartItem->quantity) {
+                $variantStock = $product->stockForVariant($cartItem->selected_color, $cartItem->selected_size);
+
+                if ($variantStock < $cartItem->quantity) {
+                    $variantLabel = implode(' / ', array_filter([
+                        $cartItem->selected_color,
+                        $cartItem->selected_size,
+                    ]));
+                    $displayName = $variantLabel !== ''
+                        ? "{$product->name} ({$variantLabel})"
+                        : $product->name;
+
                     throw ValidationException::withMessages([
                         'cart' => __('Insufficient stock for :name (only :available available).', [
-                            'name' => $product->name,
-                            'available' => $product->stock_quantity,
+                            'name' => $displayName,
+                            'available' => $variantStock,
                         ]),
                     ]);
                 }
@@ -142,7 +152,15 @@ final class PlaceOrderAction
 
                 // Deduct reserved stock inside the row-locked transaction
                 $previousStock = $product->stock_quantity;
-                $product->stock_quantity -= $cartItem->quantity;
+                if ($product->hasVariantStocks()) {
+                    $product->adjustVariantStock(
+                        $cartItem->selected_color,
+                        $cartItem->selected_size,
+                        -$cartItem->quantity,
+                    );
+                } else {
+                    $product->stock_quantity -= $cartItem->quantity;
+                }
                 $product->save();
 
                 $preparedItems[] = [
@@ -155,6 +173,8 @@ final class PlaceOrderAction
                         'product_name' => $product->name,
                         'product_slug' => $product->slug,
                         'sku' => $product->sku,
+                        'selected_color' => $cartItem->selected_color,
+                        'selected_size' => $cartItem->selected_size,
                         'unit_price' => $this->centsToDecimal($unitCents),
                         'currency' => $product->currency,
                         'quantity' => $cartItem->quantity,

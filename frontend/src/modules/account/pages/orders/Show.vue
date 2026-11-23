@@ -294,6 +294,26 @@ function submitReview(): void {
                                         {{ item.quantity }} ×
                                         {{ item.unitPriceFormatted }}
                                     </p>
+                                    <div
+                                        v-if="
+                                            item.selectedColor ||
+                                            item.selectedSize
+                                        "
+                                        class="flex flex-wrap gap-1.5 pt-1"
+                                    >
+                                        <span
+                                            v-if="item.selectedColor"
+                                            class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[11px] font-medium text-foreground"
+                                        >
+                                            Color: {{ item.selectedColor }}
+                                        </span>
+                                        <span
+                                            v-if="item.selectedSize"
+                                            class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[11px] font-medium text-foreground"
+                                        >
+                                            Size: {{ item.selectedSize }}
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div class="flex items-center gap-3">

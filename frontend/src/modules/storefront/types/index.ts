@@ -49,6 +49,7 @@ export interface StorefrontHomeProps {
     hero?: HeroCampaign | null;
     categories: CategorySummary[];
     topProducts: ProductSummary[];
+    dailyDiscoverProducts?: ProductSummary[];
     dailyInterest?: DailyInterestSection | null;
     cartSummary: CartSummary;
     searchQuery?: string;

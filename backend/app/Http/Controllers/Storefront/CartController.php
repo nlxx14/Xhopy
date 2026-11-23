@@ -36,6 +36,8 @@ class CartController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'integer', 'min:1'],
             'quantity' => ['nullable', 'integer', 'min:1', 'max:'.CartItem::MAX_QUANTITY_PER_LINE],
+            'selected_color' => ['nullable', 'string', 'max:80'],
+            'selected_size' => ['nullable', 'string', 'max:80'],
             'buy_now' => ['nullable', 'boolean'],
         ]);
 
@@ -43,6 +45,8 @@ class CartController extends Controller
             $request,
             (int) $validated['product_id'],
             (int) ($validated['quantity'] ?? 1),
+            isset($validated['selected_color']) ? (string) $validated['selected_color'] : null,
+            isset($validated['selected_size']) ? (string) $validated['selected_size'] : null,
         );
 
         if ($request->boolean('buy_now')) {

@@ -19,6 +19,8 @@ export interface CartLineItem {
     availabilityLabel: string;
     imageUrl: string | null;
     imageAlt: string;
+    selectedColor?: string | null;
+    selectedSize?: string | null;
 }
 
 export interface CartDetail {

@@ -31,6 +31,15 @@ final class OrderPresenter
             'placedAtFormatted' => $order->placed_at->toFormattedDateString(),
             'placedAtDiff' => $order->placed_at->diffForHumans(),
             'canCancel' => $order->status->canBeCancelledByCustomer(),
+            'itemsPreview' => array_values(
+                $order->items->map(fn (OrderItem $item): array => [
+                    'id' => $item->id,
+                    'productName' => $item->product_name,
+                    'quantity' => $item->quantity,
+                    'selectedColor' => $item->selected_color,
+                    'selectedSize' => $item->selected_size,
+                ])->all(),
+            ),
         ];
     }
 
@@ -79,6 +88,8 @@ final class OrderPresenter
                         'productName' => $item->product_name,
                         'productSlug' => $item->product_slug,
                         'sku' => $item->sku,
+                        'selectedColor' => $item->selected_color,
+                        'selectedSize' => $item->selected_size,
                         'quantity' => $item->quantity,
                         'unitPriceFormatted' => Money::format($item->unit_price, $item->currency),
                         'lineTotalFormatted' => Money::format($item->line_total, $item->currency),

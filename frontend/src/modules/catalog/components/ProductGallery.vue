@@ -3,9 +3,19 @@ import { ImageOff } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import type { ProductImage } from '@modules/catalog/types';
 
-const props = defineProps<{
-    images: ProductImage[];
-    productName: string;
+const props = withDefaults(
+    defineProps<{
+        images: ProductImage[];
+        productName: string;
+        selectedColor?: string | null;
+    }>(),
+    {
+        selectedColor: null,
+    },
+);
+
+const emit = defineEmits<{
+    selectColor: [color: string];
 }>();
 
 const usable = computed(() =>
@@ -13,9 +23,50 @@ const usable = computed(() =>
 );
 const selected = ref(0);
 
-watch(usable, () => {
-    selected.value = 0;
-});
+function syncGalleryToColor(color: string | null | undefined): void {
+    const list = usable.value;
+    if (list.length === 0) {
+        selected.value = 0;
+        return;
+    }
+
+    if (color) {
+        const targetLower = color.trim().toLowerCase();
+        const matchedIndex = list.findIndex(
+            (img) =>
+                img.colorName !== null &&
+                img.colorName !== undefined &&
+                img.colorName.trim().toLowerCase() === targetLower,
+        );
+        if (matchedIndex !== -1) {
+            selected.value = matchedIndex;
+            return;
+        }
+    }
+
+    const defaultIndex = list.findIndex(
+        (img) =>
+            img.colorName === null ||
+            img.colorName === undefined ||
+            img.colorName === '',
+    );
+    selected.value = defaultIndex !== -1 ? defaultIndex : 0;
+}
+
+watch(
+    [usable, () => props.selectedColor],
+    ([, color]) => {
+        syncGalleryToColor(color);
+    },
+    { immediate: true },
+);
+
+function handleSelectThumbnail(image: ProductImage, index: number): void {
+    selected.value = index;
+    if (image.colorName) {
+        emit('selectColor', image.colorName);
+    }
+}
 
 const current = computed(() => usable.value[selected.value] ?? null);
 </script>
@@ -63,7 +114,7 @@ const current = computed(() => usable.value[selected.value] ?? null);
                     "
                     :aria-label="`Show photo ${index + 1} of ${usable.length}`"
                     :aria-pressed="index === selected"
-                    @click="selected = index"
+                    @click="handleSelectThumbnail(image, index)"
                 >
                     <img
                         :src="image.url ?? undefined"

@@ -34,7 +34,17 @@ final class SaveProductAction
                 ? $attributes['status']
                 : (ProductStatus::tryFrom((string) ($attributes['status'] ?? 'draft')) ?? ProductStatus::Draft);
 
-            $desiredStock = max(0, (int) ($attributes['stock_quantity'] ?? 0));
+            $availableColors = $this->parseOptionList($attributes['available_colors'] ?? null);
+            $availableSizes = $this->parseOptionList($attributes['available_sizes'] ?? null);
+            $variantStocks = $this->normalizeVariantStocks(
+                $attributes['variant_stock_entries'] ?? $attributes['variant_stocks'] ?? null,
+                $availableColors,
+                $availableSizes,
+            );
+
+            $desiredStock = $variantStocks !== null
+                ? array_sum($variantStocks)
+                : max(0, (int) ($attributes['stock_quantity'] ?? 0));
             $isCreating = $existing === null;
 
             $publishedAt = $existing?->published_at;
@@ -58,6 +68,9 @@ final class SaveProductAction
                     ? number_format((float) $attributes['compare_at_price'], 2, '.', '')
                     : null,
                 'currency' => 'PHP',
+                'available_colors' => $availableColors,
+                'available_sizes' => $availableSizes,
+                'variant_stocks' => $variantStocks,
                 'status' => $status,
                 'is_featured' => (bool) ($attributes['is_featured'] ?? false),
                 'featured_rank' => isset($attributes['featured_rank']) && $attributes['featured_rank'] !== ''
@@ -107,6 +120,7 @@ final class SaveProductAction
                     [
                         'product_id' => $product->id,
                         'is_primary' => true,
+                        'color_name' => null,
                     ],
                     [
                         'path' => trim($attributes['image_path']),
@@ -114,6 +128,43 @@ final class SaveProductAction
                         'sort_order' => 0,
                     ],
                 );
+            }
+
+            $availableColors = $product->available_colors ?? [];
+            if ($availableColors === []) {
+                ProductImage::query()
+                    ->where('product_id', $product->id)
+                    ->whereNotNull('color_name')
+                    ->delete();
+            } else {
+                ProductImage::query()
+                    ->where('product_id', $product->id)
+                    ->whereNotNull('color_name')
+                    ->whereNotIn('color_name', $availableColors)
+                    ->delete();
+
+                $colorImagePaths = $attributes['color_image_paths'] ?? [];
+                if (is_array($colorImagePaths)) {
+                    foreach ($availableColors as $index => $colorName) {
+                        $rawPath = $colorImagePaths[$colorName] ?? null;
+                        if (! is_string($rawPath) || trim($rawPath) === '') {
+                            continue;
+                        }
+
+                        ProductImage::query()->updateOrCreate(
+                            [
+                                'product_id' => $product->id,
+                                'color_name' => $colorName,
+                            ],
+                            [
+                                'path' => trim($rawPath),
+                                'alt_text' => sprintf('%s — %s', $product->name, $colorName),
+                                'sort_order' => $index + 1,
+                                'is_primary' => false,
+                            ],
+                        );
+                    }
+                }
             }
 
             $this->audit->record(
@@ -132,5 +183,87 @@ final class SaveProductAction
 
             return $product;
         });
+    }
+
+    /**
+     * @return list<string>|null
+     */
+    private function parseOptionList(mixed $raw): ?array
+    {
+        if ($raw === null) {
+            return null;
+        }
+
+        $items = is_array($raw)
+            ? $raw
+            : (is_string($raw) ? explode(',', $raw) : []);
+
+        $normalized = [];
+
+        foreach ($items as $item) {
+            if (! is_scalar($item)) {
+                continue;
+            }
+
+            $value = Str::limit(trim((string) $item), 80, '');
+
+            if ($value !== '' && ! in_array($value, $normalized, true)) {
+                $normalized[] = $value;
+            }
+        }
+
+        return $normalized !== [] ? $normalized : null;
+    }
+
+    /**
+     * @param  list<string>|null  $availableColors
+     * @param  list<string>|null  $availableSizes
+     * @return array<string, int>|null
+     */
+    private function normalizeVariantStocks(
+        mixed $rawVariantStocks,
+        ?array $availableColors,
+        ?array $availableSizes,
+    ): ?array {
+        if (! is_array($rawVariantStocks) || $rawVariantStocks === []) {
+            return null;
+        }
+
+        $colors = $availableColors !== null && $availableColors !== [] ? $availableColors : [''];
+        $sizes = $availableSizes !== null && $availableSizes !== [] ? $availableSizes : [''];
+
+        if ($colors === [''] && $sizes === ['']) {
+            return null;
+        }
+
+        $lookup = [];
+        if (array_is_list($rawVariantStocks)) {
+            foreach ($rawVariantStocks as $entry) {
+                if (! is_array($entry)) {
+                    continue;
+                }
+
+                $entryColor = isset($entry['color']) && is_string($entry['color']) ? $entry['color'] : '';
+                $entrySize = isset($entry['size']) && is_string($entry['size']) ? $entry['size'] : '';
+                $entryKey = Product::variantStockKey($entryColor, $entrySize);
+                $rawQty = $entry['quantity'] ?? 0;
+                $lookup[$entryKey] = max(0, is_numeric($rawQty) ? (int) $rawQty : 0);
+            }
+        } else {
+            foreach ($rawVariantStocks as $rawKey => $rawQty) {
+                $lookup[(string) $rawKey] = max(0, is_numeric($rawQty) ? (int) $rawQty : 0);
+            }
+        }
+
+        $normalized = [];
+
+        foreach ($colors as $color) {
+            foreach ($sizes as $size) {
+                $key = Product::variantStockKey($color, $size);
+                $normalized[$key] = $lookup[$key] ?? 0;
+            }
+        }
+
+        return $normalized;
     }
 }

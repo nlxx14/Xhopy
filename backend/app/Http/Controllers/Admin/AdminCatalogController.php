@@ -29,7 +29,7 @@ class AdminCatalogController extends Controller
     {
         $products = array_values(
             Product::query()
-                ->with(['category:id,name,slug', 'primaryImage'])
+                ->with(['category:id,name,slug', 'primaryImage', 'images'])
                 ->withSum('stockMovements as ledger_stock_sum', 'quantity_delta')
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
@@ -57,6 +57,10 @@ class AdminCatalogController extends Controller
                         'isFeatured' => $product->is_featured,
                         'featuredRank' => $product->featured_rank,
                         'imageUrl' => $presenter->imageUrl($product->primaryImage?->path),
+                        'colorImages' => $presenter->colorImagesMap($product),
+                        'availableColors' => $product->available_colors ?? [],
+                        'availableSizes' => $product->available_sizes ?? [],
+                        'variantStocks' => $product->variant_stocks,
                     ];
                 })
                 ->all(),
@@ -93,6 +97,7 @@ class AdminCatalogController extends Controller
     ): RedirectResponse {
         $validated = $request->validate($this->productRules());
         $validated['image_path'] = $this->resolveUploadedImagePath($request, $validated);
+        $validated['color_image_paths'] = $this->resolveColorImagePaths($request, $validated);
 
         $saveProduct->execute($request->user(), $validated);
 
@@ -108,6 +113,7 @@ class AdminCatalogController extends Controller
     ): RedirectResponse {
         $validated = $request->validate($this->productRules($product->id));
         $validated['image_path'] = $this->resolveUploadedImagePath($request, $validated);
+        $validated['color_image_paths'] = $this->resolveColorImagePaths($request, $validated);
 
         $saveProduct->execute($request->user(), $validated, $product);
 
@@ -338,11 +344,23 @@ class AdminCatalogController extends Controller
             'price' => ['required', 'numeric', 'min:0', 'max:9999999.99'],
             'compare_at_price' => ['nullable', 'numeric', 'min:0', 'max:9999999.99'],
             'stock_quantity' => ['required', 'integer', 'min:0', 'max:100000'],
+            'available_colors' => ['nullable', 'string', 'max:500'],
+            'available_sizes' => ['nullable', 'string', 'max:500'],
+            'variant_stock_entries' => ['nullable', 'array', 'max:200'],
+            'variant_stock_entries.*.color' => ['nullable', 'string', 'max:80'],
+            'variant_stock_entries.*.size' => ['nullable', 'string', 'max:80'],
+            'variant_stock_entries.*.quantity' => ['required_with:variant_stock_entries.*', 'integer', 'min:0', 'max:100000'],
+            'variant_stocks' => ['nullable', 'array', 'max:200'],
+            'variant_stocks.*' => ['nullable', 'integer', 'min:0', 'max:100000'],
             'status' => ['required', Rule::enum(ProductStatus::class)],
             'is_featured' => ['nullable', 'boolean'],
             'featured_rank' => ['nullable', 'integer', 'min:1', 'max:999'],
             'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'image_url' => ['nullable', 'url:https', 'max:500'],
+            'color_images' => ['nullable', 'array', 'max:20'],
+            'color_images.*.color' => ['required_with:color_images.*', 'string', 'max:80'],
+            'color_images.*.file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'color_images.*.url' => ['nullable', 'url:https', 'max:500'],
         ];
     }
 
@@ -365,5 +383,48 @@ class AdminCatalogController extends Controller
         }
 
         return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     * @return array<string, string>
+     */
+    private function resolveColorImagePaths(Request $request, array $validated): array
+    {
+        $entries = $validated['color_images'] ?? [];
+        if (! is_array($entries)) {
+            return [];
+        }
+
+        $resolved = [];
+
+        foreach ($entries as $index => $entry) {
+            if (! is_array($entry)) {
+                continue;
+            }
+
+            $color = trim((string) ($entry['color'] ?? ''));
+            if ($color === '') {
+                continue;
+            }
+
+            if ($request->hasFile("color_images.{$index}.file")) {
+                $file = $request->file("color_images.{$index}.file");
+                if ($file !== null && $file->isValid()) {
+                    $stored = $file->store('products', 'public');
+                    if (is_string($stored) && $stored !== '') {
+                        $resolved[$color] = $stored;
+
+                        continue;
+                    }
+                }
+            }
+
+            if (isset($entry['url']) && is_string($entry['url']) && trim($entry['url']) !== '') {
+                $resolved[$color] = trim($entry['url']);
+            }
+        }
+
+        return $resolved;
     }
 }

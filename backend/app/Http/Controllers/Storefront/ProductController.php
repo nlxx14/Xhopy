@@ -53,7 +53,7 @@ class ProductController extends Controller
             ->published()
             ->where('products.category_id', $product->category_id)
             ->whereKeyNot($product->getKey())
-            ->with(['category:id,name,slug', 'primaryImage'])
+            ->with(['category:id,name,slug', 'primaryImage', 'images'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews')
             ->orderByDesc('products.is_featured')

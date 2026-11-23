@@ -5,6 +5,7 @@ namespace App\Domain\Catalog\Models;
 use App\Domain\Catalog\Enums\ProductStatus;
 use App\Domain\Catalog\Support\Money;
 use App\Domain\Inventory\Models\StockMovement;
+use App\Domain\Orders\Models\OrderItem;
 use Carbon\CarbonInterface;
 use Database\Factories\ProductFactory;
 use Illuminate\Database\Eloquent\Attributes\UseFactory;
@@ -28,6 +29,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $compare_at_price
  * @property string $currency
  * @property int $stock_quantity
+ * @property list<string>|null $available_colors
+ * @property list<string>|null $available_sizes
+ * @property array<string, int>|null $variant_stocks
  * @property ProductStatus $status
  * @property bool $is_featured
  * @property int|null $featured_rank
@@ -55,6 +59,9 @@ class Product extends Model
         'compare_at_price',
         'currency',
         'stock_quantity',
+        'available_colors',
+        'available_sizes',
+        'variant_stocks',
         'status',
         'is_featured',
         'featured_rank',
@@ -70,6 +77,9 @@ class Product extends Model
             'price' => 'decimal:2',
             'compare_at_price' => 'decimal:2',
             'stock_quantity' => 'integer',
+            'available_colors' => 'array',
+            'available_sizes' => 'array',
+            'variant_stocks' => 'array',
             'status' => ProductStatus::class,
             'is_featured' => 'boolean',
             'featured_rank' => 'integer',
@@ -110,6 +120,14 @@ class Product extends Model
     }
 
     /**
+     * @return HasMany<OrderItem, $this>
+     */
+    public function orderItems(): HasMany
+    {
+        return $this->hasMany(OrderItem::class);
+    }
+
+    /**
      * The image shown on listing cards: the primary image, otherwise the first by sort order.
      *
      * @return HasOne<ProductImage, $this>
@@ -140,6 +158,75 @@ class Product extends Model
     public function isInStock(): bool
     {
         return $this->stock_quantity > 0;
+    }
+
+    public static function variantStockKey(?string $color, ?string $size): string
+    {
+        $c = $color !== null ? trim($color) : '';
+        $s = $size !== null ? trim($size) : '';
+
+        return $c.'|'.$s;
+    }
+
+    public function hasVariantStocks(): bool
+    {
+        return is_array($this->variant_stocks) && $this->variant_stocks !== [];
+    }
+
+    public function stockForVariant(?string $color = null, ?string $size = null): int
+    {
+        if (! $this->hasVariantStocks()) {
+            return $this->stock_quantity;
+        }
+
+        $stocks = $this->variant_stocks ?? [];
+        $key = self::variantStockKey($color, $size);
+
+        if (array_key_exists($key, $stocks)) {
+            return max(0, (int) $stocks[$key]);
+        }
+
+        $lowerKey = mb_strtolower($key);
+        foreach ($stocks as $existingKey => $qty) {
+            if (mb_strtolower((string) $existingKey) === $lowerKey) {
+                return max(0, (int) $qty);
+            }
+        }
+
+        return 0;
+    }
+
+    public function adjustVariantStock(?string $color, ?string $size, int $delta): void
+    {
+        if (! $this->hasVariantStocks()) {
+            $this->stock_quantity = max(0, $this->stock_quantity + $delta);
+
+            return;
+        }
+
+        $stocks = $this->variant_stocks ?? [];
+        $targetKey = self::variantStockKey($color, $size);
+        $matchedKey = $targetKey;
+
+        if (! array_key_exists($targetKey, $stocks)) {
+            $lowerKey = mb_strtolower($targetKey);
+            foreach (array_keys($stocks) as $existingKey) {
+                if (mb_strtolower((string) $existingKey) === $lowerKey) {
+                    $matchedKey = (string) $existingKey;
+                    break;
+                }
+            }
+        }
+
+        $currentVariantQty = max(0, (int) ($stocks[$matchedKey] ?? 0));
+        $stocks[$matchedKey] = max(0, $currentVariantQty + $delta);
+        $this->variant_stocks = $stocks;
+
+        $total = 0;
+        foreach ($stocks as $qty) {
+            $total += max(0, (int) $qty);
+        }
+        $this->stock_quantity = $total;
     }
 
     /**

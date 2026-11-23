@@ -6,6 +6,7 @@ use App\Domain\Cart\Models\Cart;
 use App\Domain\Cart\Models\CartItem;
 use App\Domain\Catalog\Enums\ProductStatus;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Catalog\Models\ProductImage;
 use App\Domain\Catalog\Support\Money;
 use App\Domain\Catalog\Support\ProductPresenter;
 use App\Models\User;
@@ -90,8 +91,13 @@ final class CartService
         ]);
     }
 
-    public function addItem(Request $request, int $productId, int $quantity = 1): CartItem
-    {
+    public function addItem(
+        Request $request,
+        int $productId,
+        int $quantity = 1,
+        ?string $selectedColor = null,
+        ?string $selectedSize = null,
+    ): CartItem {
         $product = Product::query()->published()->find($productId);
 
         if ($product === null) {
@@ -106,22 +112,45 @@ final class CartService
             ]);
         }
 
-        return DB::transaction(function () use ($request, $product, $quantity): CartItem {
+        $resolvedColor = $this->resolveOption($product->available_colors ?? [], $selectedColor, 'selected_color', 'color');
+        $resolvedSize = $this->resolveOption($product->available_sizes ?? [], $selectedSize, 'selected_size', 'size');
+        $variantStock = $product->stockForVariant($resolvedColor, $resolvedSize);
+
+        if ($variantStock <= 0) {
+            throw ValidationException::withMessages([
+                'quantity' => __('The selected option for :name is currently out of stock.', [
+                    'name' => $product->name,
+                ]),
+            ]);
+        }
+
+        return DB::transaction(function () use ($request, $product, $quantity, $resolvedColor, $resolvedSize, $variantStock): CartItem {
             $cart = $this->getOrCreateCart($request);
 
             $existing = CartItem::query()
                 ->where('cart_id', $cart->id)
                 ->where('product_id', $product->id)
+                ->where('selected_color', $resolvedColor)
+                ->where('selected_size', $resolvedSize)
                 ->lockForUpdate()
                 ->first();
 
-            $desiredQuantity = ($existing->quantity ?? 0) + max(1, $quantity);
-            $maxAllowed = min($product->stock_quantity, CartItem::MAX_QUANTITY_PER_LINE);
+            $otherLinesQuantity = (int) CartItem::query()
+                ->where('cart_id', $cart->id)
+                ->where('product_id', $product->id)
+                ->when($existing !== null, fn ($q) => $q->where('id', '!=', $existing->id))
+                ->sum('quantity');
 
-            if ($desiredQuantity > $maxAllowed) {
+            $desiredQuantity = ($existing->quantity ?? 0) + max(1, $quantity);
+            $availableBudget = $product->hasVariantStocks()
+                ? $variantStock
+                : max(0, $product->stock_quantity - $otherLinesQuantity);
+            $maxAllowedForLine = min($availableBudget, CartItem::MAX_QUANTITY_PER_LINE);
+
+            if ($desiredQuantity > $maxAllowedForLine) {
                 throw ValidationException::withMessages([
                     'quantity' => __('Only :max units of :name can be added to your cart.', [
-                        'max' => $maxAllowed,
+                        'max' => min($variantStock, CartItem::MAX_QUANTITY_PER_LINE),
                         'name' => $product->name,
                     ]),
                 ]);
@@ -138,6 +167,8 @@ final class CartService
                 'cart_id' => $cart->id,
                 'product_id' => $product->id,
                 'quantity' => $desiredQuantity,
+                'selected_color' => $resolvedColor,
+                'selected_size' => $resolvedSize,
             ]);
         });
     }
@@ -160,7 +191,15 @@ final class CartService
             ]);
         }
 
-        $maxAllowed = min($product->stock_quantity, CartItem::MAX_QUANTITY_PER_LINE);
+        $variantStock = $product->stockForVariant($item->selected_color, $item->selected_size);
+
+        if ($variantStock <= 0) {
+            throw ValidationException::withMessages([
+                'quantity' => __('This product is no longer available in stock.'),
+            ]);
+        }
+
+        $maxAllowed = min($variantStock, CartItem::MAX_QUANTITY_PER_LINE);
 
         if ($quantity > $maxAllowed) {
             throw ValidationException::withMessages([
@@ -216,7 +255,7 @@ final class CartService
             ];
         }
 
-        $cart->load(['items.product.category', 'items.product.primaryImage']);
+        $cart->load(['items.product.category', 'items.product.primaryImage', 'items.product.images']);
 
         $items = [];
         $itemCount = 0;
@@ -237,7 +276,7 @@ final class CartService
                 && $product->published_at->lte(now())
                 && $product->category->is_active;
 
-            $availableStock = $isPublished ? $product->stock_quantity : 0;
+            $availableStock = $isPublished ? $product->stockForVariant($cartItem->selected_color, $cartItem->selected_size) : 0;
             $isAvailable = $isPublished && $availableStock >= $cartItem->quantity;
 
             if (! $isAvailable) {
@@ -252,7 +291,14 @@ final class CartService
             }
 
             $itemCount += $cartItem->quantity;
-            $image = $product->primaryImage;
+            $selectedColor = $cartItem->selected_color;
+            $matchedColorImage = $selectedColor !== null && $selectedColor !== ''
+                ? $product->images->first(
+                    fn (ProductImage $img): bool => $img->color_name !== null
+                        && strcasecmp($img->color_name, $selectedColor) === 0,
+                )
+                : null;
+            $image = $matchedColorImage ?? $product->primaryImage;
 
             $items[] = [
                 'id' => $cartItem->id,
@@ -276,6 +322,8 @@ final class CartService
                             : 'In Stock')),
                 'imageUrl' => $this->presenter->imageUrl($image?->path),
                 'imageAlt' => $image?->alt_text ?: $product->name,
+                'selectedColor' => $cartItem->selected_color,
+                'selectedSize' => $cartItem->selected_size,
             ];
         }
 
@@ -313,6 +361,34 @@ final class CartService
         }
     }
 
+    /**
+     * @param  list<string>  $availableOptions
+     */
+    private function resolveOption(
+        array $availableOptions,
+        ?string $selected,
+        string $fieldKey,
+        string $label,
+    ): ?string {
+        if ($availableOptions === []) {
+            return null;
+        }
+
+        $trimmed = $selected !== null ? trim($selected) : '';
+
+        if ($trimmed === '') {
+            return $availableOptions[0];
+        }
+
+        if (! in_array($trimmed, $availableOptions, true)) {
+            throw ValidationException::withMessages([
+                $fieldKey => __('Please select a valid :label option.', ['label' => $label]),
+            ]);
+        }
+
+        return $trimmed;
+    }
+
     private function mergeGuestCart(User $user, Cart $guestCart, ?Cart $userCart): Cart
     {
         return DB::transaction(function () use ($user, $guestCart, $userCart): Cart {
@@ -331,6 +407,8 @@ final class CartService
                 $existing = CartItem::query()
                     ->where('cart_id', $userCart->id)
                     ->where('product_id', $guestItem->product_id)
+                    ->where('selected_color', $guestItem->selected_color)
+                    ->where('selected_size', $guestItem->selected_size)
                     ->first();
 
                 if ($existing !== null) {
@@ -344,6 +422,8 @@ final class CartService
                         'cart_id' => $userCart->id,
                         'product_id' => $guestItem->product_id,
                         'quantity' => min(CartItem::MAX_QUANTITY_PER_LINE, $guestItem->quantity),
+                        'selected_color' => $guestItem->selected_color,
+                        'selected_size' => $guestItem->selected_size,
                     ]);
                 }
             }

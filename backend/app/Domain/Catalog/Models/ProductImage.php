@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $product_id
  * @property string $path
  * @property string|null $alt_text
+ * @property string|null $color_name
  * @property int $sort_order
  * @property bool $is_primary
  */
@@ -29,6 +30,7 @@ class ProductImage extends Model
         'product_id',
         'path',
         'alt_text',
+        'color_name',
         'sort_order',
         'is_primary',
     ];

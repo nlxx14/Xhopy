@@ -19,6 +19,8 @@ class HomeController extends Controller
 {
     private const TOP_PRODUCT_LIMIT = 8;
 
+    private const DAILY_DISCOVER_LIMIT = 40;
+
     /**
      * Render the XHopy storefront home page.
      *
@@ -49,12 +51,21 @@ class HomeController extends Controller
         if ($isDemoPreview) {
             $categories = $demo->categories();
             $topProducts = $demo->filterProducts($demo->products(), $searchQuery, $selectedCategory);
+            $dailyDiscoverProducts = $demo->products();
             $dailyInterestSection = $demo->dailyInterest();
         } else {
             $wishlistedIds = $wishlist->wishlistedProductIds($request->user());
             $categories = $shell->categories();
             $topProducts = $listing
-                ->top(new CatalogFilters(query: $searchQuery, category: $selectedCategory), self::TOP_PRODUCT_LIMIT)
+                ->topSelling(new CatalogFilters(query: $searchQuery, category: $selectedCategory), self::TOP_PRODUCT_LIMIT)
+                ->map(fn (Product $product): array => $presenter->summary(
+                    $product,
+                    in_array($product->id, $wishlistedIds, true),
+                ))
+                ->values()
+                ->all();
+            $dailyDiscoverProducts = $listing
+                ->randomSelling(self::DAILY_DISCOVER_LIMIT)
                 ->map(fn (Product $product): array => $presenter->summary(
                     $product,
                     in_array($product->id, $wishlistedIds, true),
@@ -83,6 +94,7 @@ class HomeController extends Controller
             ],
             'categories' => $categories,
             'topProducts' => $topProducts,
+            'dailyDiscoverProducts' => $dailyDiscoverProducts,
             'dailyInterest' => $dailyInterestSection,
             'cartSummary' => $shell->cartSummary(),
             'searchQuery' => $searchQuery,

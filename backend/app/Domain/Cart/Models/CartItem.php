@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $cart_id
  * @property int $product_id
  * @property int $quantity
+ * @property string|null $selected_color
+ * @property string|null $selected_size
  * @property-read Cart $cart
  * @property-read Product|null $product
  */
@@ -25,6 +27,8 @@ class CartItem extends Model
         'cart_id',
         'product_id',
         'quantity',
+        'selected_color',
+        'selected_size',
     ];
 
     /**

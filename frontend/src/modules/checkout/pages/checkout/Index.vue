@@ -468,6 +468,28 @@ function submitOrder(): void {
                                         Qty {{ item.quantity }} ×
                                         {{ item.unitPriceFormatted }}
                                     </p>
+                                    <p
+                                        v-if="
+                                            item.selectedColor ||
+                                            item.selectedSize
+                                        "
+                                        class="mt-0.5 text-[11px] font-medium text-primary"
+                                    >
+                                        <span v-if="item.selectedColor">
+                                            Color: {{ item.selectedColor }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                item.selectedColor &&
+                                                item.selectedSize
+                                            "
+                                        >
+                                            ·
+                                        </span>
+                                        <span v-if="item.selectedSize">
+                                            Size: {{ item.selectedSize }}
+                                        </span>
+                                    </p>
                                 </div>
                                 <span
                                     class="shrink-0 font-semibold text-foreground"

@@ -5,6 +5,7 @@ namespace App\Domain\Catalog\Queries;
 use App\Domain\Catalog\Enums\ProductSort;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Orders\Enums\OrderStatus;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -36,15 +37,68 @@ final class ProductListingQuery
     }
 
     /**
+     * Top products ranked by highest non-cancelled sold quantity, falling back to featured & newest.
+     *
+     * @return Collection<int, Product>
+     */
+    public function topSelling(CatalogFilters $filters, int $limit): Collection
+    {
+        $query = $this->baseQuery($filters);
+
+        $query
+            ->orderByRaw('COALESCE(sold_quantity, 0) DESC')
+            ->orderByDesc('products.is_featured')
+            ->orderByRaw('products.featured_rank IS NULL')
+            ->orderBy('products.featured_rank')
+            ->orderByDesc('products.published_at')
+            ->orderBy('products.id');
+
+        return $query->limit($limit)->get();
+    }
+
+    /**
+     * Randomized active in-stock products currently selling on the storefront.
+     *
+     * @return Collection<int, Product>
+     */
+    public function randomSelling(int $limit = 40): Collection
+    {
+        $query = Product::query()
+            ->published()
+            ->where('products.stock_quantity', '>', 0)
+            ->with(['category:id,name,slug', 'primaryImage', 'images'])
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews');
+
+        $this->withSoldCount($query);
+
+        return $query->inRandomOrder()->limit($limit)->get();
+    }
+
+    /**
      * @return Builder<Product>
      */
     private function build(CatalogFilters $filters): Builder
     {
+        $query = $this->baseQuery($filters);
+
+        $this->applySort($query, $filters->sort);
+
+        return $query;
+    }
+
+    /**
+     * @return Builder<Product>
+     */
+    private function baseQuery(CatalogFilters $filters): Builder
+    {
         $query = Product::query()
             ->published()
-            ->with(['category:id,name,slug', 'primaryImage'])
+            ->with(['category:id,name,slug', 'primaryImage', 'images'])
             ->withAvg('reviews', 'rating')
             ->withCount('reviews');
+
+        $this->withSoldCount($query);
 
         if ($filters->category !== null) {
             $query->whereIn(
@@ -67,9 +121,20 @@ final class ProductListingQuery
             $query->where('products.stock_quantity', '>', 0);
         }
 
-        $this->applySort($query, $filters->sort);
-
         return $query;
+    }
+
+    /**
+     * @param  Builder<Product>  $query
+     */
+    private function withSoldCount(Builder $query): void
+    {
+        $query->withSum([
+            'orderItems as sold_quantity' => fn (Builder $orderItems) => $orderItems->whereHas(
+                'order',
+                fn (Builder $orders) => $orders->where('orders.status', '!=', OrderStatus::Cancelled->value),
+            ),
+        ], 'quantity');
     }
 
     /**

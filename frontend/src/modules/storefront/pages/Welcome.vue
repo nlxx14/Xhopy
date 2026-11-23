@@ -10,7 +10,6 @@ import {
 } from '@lucide/vue';
 import { computed, ref, watch } from 'vue';
 import CategoryCard from '@modules/storefront/components/CategoryCard.vue';
-import DailyInterestModule from '@modules/storefront/components/DailyInterestModule.vue';
 import EmptyState from '@shared/components/EmptyState.vue';
 import { ProductCard, type ProductSummary } from '@modules/catalog';
 import {
@@ -45,6 +44,7 @@ const props = withDefaults(defineProps<StorefrontHomeProps>(), {
     hero: null,
     categories: () => [],
     topProducts: () => [],
+    dailyDiscoverProducts: () => [],
     dailyInterest: null,
     cartSummary: () => ({ itemCount: 0, subtotalFormatted: null }),
     searchQuery: '',
@@ -136,7 +136,12 @@ function handleAddToCart(product: ProductSummary): void {
     if (!props.isDemoPreview && typeof product.id === 'number') {
         router.post(
             storeCartItem.url(),
-            { product_id: product.id, quantity: 1 },
+            {
+                product_id: product.id,
+                quantity: 1,
+                selected_color: product.selectedColor ?? undefined,
+                selected_size: product.selectedSize ?? undefined,
+            },
             { preserveScroll: true, preserveState: true },
         );
     }
@@ -524,11 +529,56 @@ function clearFilters(): void {
                 />
             </section>
 
-            <!-- 4. Daily Interest (Editorial Banner + Supporting Campaign Tiles) -->
-            <DailyInterestModule
-                v-if="dailyInterest"
-                :daily-interest="dailyInterest"
-            />
+            <!-- 4. Daily Interest (Up to 10 rows × 4 columns of random selling items) -->
+            <section
+                v-if="dailyDiscoverProducts.length > 0"
+                aria-labelledby="daily-interest-heading"
+                class="space-y-5 border-t border-border/60 pt-8"
+            >
+                <div
+                    class="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"
+                >
+                    <div>
+                        <p
+                            class="text-xs font-semibold tracking-wider text-primary uppercase"
+                        >
+                            Daily Discover
+                        </p>
+                        <h2
+                            id="daily-interest-heading"
+                            class="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
+                        >
+                            Daily Interest
+                        </h2>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-4">
+                        <p class="text-xs text-muted-foreground">
+                            Random picks from active selling products across all
+                            departments.
+                        </p>
+                        <Link
+                            :href="productsIndex.url()"
+                            class="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+                        >
+                            <span>Browse all items</span>
+                            <ArrowRight class="size-3.5" aria-hidden="true" />
+                        </Link>
+                    </div>
+                </div>
+
+                <div
+                    class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"
+                >
+                    <ProductCard
+                        v-for="product in dailyDiscoverProducts"
+                        :key="`daily-${product.id}`"
+                        :product="product"
+                        :linkable="!isDemoPreview"
+                        @add-to-cart="handleAddToCart"
+                    />
+                </div>
+            </section>
         </div>
 
         <!-- Cart Preview Dialog -->

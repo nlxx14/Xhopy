@@ -14,8 +14,16 @@ export interface ProductSummary {
     currency: string;
     inStock: boolean;
     stockLabel: string;
+    stockQuantity?: number;
     imageUrl?: string | null;
     imageAlt: string;
+    colorImages?: Record<string, string>;
+    availableColors?: string[];
+    availableSizes?: string[];
+    variantStocks?: Record<string, number> | null;
+    selectedColor?: string | null;
+    selectedSize?: string | null;
+    soldCount?: number;
     isWishlisted?: boolean;
     addedAtDiff?: string;
     ratingAverage?: number | null;
@@ -26,6 +34,7 @@ export interface ProductImage {
     id: number;
     url: string | null;
     alt: string;
+    colorName?: string | null;
 }
 
 export interface ProductReview {

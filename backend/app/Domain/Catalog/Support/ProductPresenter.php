@@ -7,7 +7,6 @@ use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductImage;
 use App\Domain\Catalog\Models\ProductReview;
-use Illuminate\Support\Facades\Storage;
 
 /**
  * Maps catalog models to the exact prop shapes consumed by the Vue storefront.
@@ -35,8 +34,14 @@ final class ProductPresenter
             ...$this->pricing($product),
             'inStock' => $product->isInStock(),
             'stockLabel' => $product->isInStock() ? 'In Stock' : 'Out of Stock',
+            'stockQuantity' => $product->stock_quantity,
             'imageUrl' => $this->imageUrl($image?->path),
             'imageAlt' => $this->imageAlt($image, $product),
+            'colorImages' => $this->colorImagesMap($product),
+            'availableColors' => $product->available_colors ?? [],
+            'availableSizes' => $product->available_sizes ?? [],
+            'variantStocks' => $product->variant_stocks,
+            'soldCount' => $this->soldCount($product),
             'isWishlisted' => $isWishlisted,
             ...$this->ratings($product),
         ];
@@ -64,6 +69,7 @@ final class ProductPresenter
             ...$this->pricing($product),
             'inStock' => $product->isInStock(),
             'stockLabel' => $product->isInStock() ? 'In Stock' : 'Out of Stock',
+            'stockQuantity' => $product->stock_quantity,
             'shortDescription' => $product->short_description,
             'description' => $product->description,
             'images' => $product->images
@@ -71,11 +77,17 @@ final class ProductPresenter
                     'id' => $image->id,
                     'url' => $this->imageUrl($image->path),
                     'alt' => $this->imageAlt($image, $product),
+                    'colorName' => $image->color_name,
                 ])
                 ->values()
                 ->all(),
             'imageUrl' => $this->imageUrl($product->images->first()?->path),
             'imageAlt' => $this->imageAlt($product->images->first(), $product),
+            'colorImages' => $this->colorImagesMap($product),
+            'availableColors' => $product->available_colors ?? [],
+            'availableSizes' => $product->available_sizes ?? [],
+            'variantStocks' => $product->variant_stocks,
+            'soldCount' => $this->soldCount($product),
             'isWishlisted' => $isWishlisted,
             ...$this->ratings($product),
             'reviews' => $product->relationLoaded('reviews')
@@ -148,7 +160,36 @@ final class ProductPresenter
             return $path;
         }
 
-        return Storage::disk('public')->url($path);
+        if (str_starts_with($path, '/storage/')) {
+            return $path;
+        }
+
+        return '/storage/'.ltrim($path, '/');
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function colorImagesMap(Product $product): array
+    {
+        if (! $product->relationLoaded('images')) {
+            return [];
+        }
+
+        $map = [];
+
+        foreach ($product->images as $image) {
+            if ($image->color_name === null || trim($image->color_name) === '') {
+                continue;
+            }
+
+            $url = $this->imageUrl($image->path);
+            if ($url !== null) {
+                $map[$image->color_name] = $url;
+            }
+        }
+
+        return $map;
     }
 
     /**
@@ -190,6 +231,15 @@ final class ProductPresenter
         return $image !== null && $image->alt_text !== null && $image->alt_text !== ''
             ? $image->alt_text
             : $product->name;
+    }
+
+    private function soldCount(Product $product): int
+    {
+        $attributes = $product->getAttributes();
+
+        return array_key_exists('sold_quantity', $attributes)
+            ? (int) ($attributes['sold_quantity'] ?? 0)
+            : 0;
     }
 
     /**

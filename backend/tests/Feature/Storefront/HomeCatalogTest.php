@@ -4,6 +4,10 @@ use App\Domain\Catalog\Enums\CampaignPlacement;
 use App\Domain\Catalog\Models\CampaignContent;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Orders\Enums\OrderStatus;
+use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Models\OrderItem;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 
@@ -90,5 +94,82 @@ test('home with a populated database never mixes in demo records', function () {
             ->has('topProducts', 1)
             ->where('topProducts.0.name', 'Real Product')
             ->where('announcement', null)
+        );
+});
+
+test('home ranks top products by highest sold quantity and caps daily discover at 40 items', function () {
+    $customer = User::factory()->create();
+    $featuredUnsold = Product::factory()->featured(1)->create(['name' => 'Featured Unsold', 'stock_quantity' => 5]);
+    $bestSeller = Product::factory()->create(['name' => 'Best Seller', 'stock_quantity' => 5]);
+    $cancelledSeller = Product::factory()->create(['name' => 'Cancelled Only', 'stock_quantity' => 5]);
+    Product::factory()->create(['name' => 'Out Of Stock', 'stock_quantity' => 0]);
+    Product::factory()->count(42)->create(['stock_quantity' => 3]);
+
+    $paidOrder = Order::query()->create([
+        'order_number' => 'XH-TEST-SOLD1',
+        'user_id' => $customer->id,
+        'status' => OrderStatus::Delivered,
+        'subtotal_amount' => '200.00',
+        'discount_amount' => '0.00',
+        'shipping_amount' => '0.00',
+        'total_amount' => '200.00',
+        'shipping_recipient_name' => 'Test User',
+        'shipping_phone' => '+639171234567',
+        'shipping_line_1' => '123 Test St',
+        'shipping_city' => 'Makati',
+        'shipping_province' => 'Metro Manila',
+        'shipping_postal_code' => '1200',
+        'placed_at' => now(),
+    ]);
+
+    OrderItem::query()->create([
+        'order_id' => $paidOrder->id,
+        'product_id' => $bestSeller->id,
+        'product_name' => $bestSeller->name,
+        'product_slug' => $bestSeller->slug,
+        'sku' => $bestSeller->sku,
+        'unit_price' => '100.00',
+        'currency' => 'PHP',
+        'quantity' => 7,
+        'line_total' => '700.00',
+    ]);
+
+    $cancelledOrder = Order::query()->create([
+        'order_number' => 'XH-TEST-CANC1',
+        'user_id' => $customer->id,
+        'status' => OrderStatus::Cancelled,
+        'subtotal_amount' => '1000.00',
+        'discount_amount' => '0.00',
+        'shipping_amount' => '0.00',
+        'total_amount' => '1000.00',
+        'shipping_recipient_name' => 'Test User',
+        'shipping_phone' => '+639171234567',
+        'shipping_line_1' => '123 Test St',
+        'shipping_city' => 'Makati',
+        'shipping_province' => 'Metro Manila',
+        'shipping_postal_code' => '1200',
+        'placed_at' => now(),
+    ]);
+
+    OrderItem::query()->create([
+        'order_id' => $cancelledOrder->id,
+        'product_id' => $cancelledSeller->id,
+        'product_name' => $cancelledSeller->name,
+        'product_slug' => $cancelledSeller->slug,
+        'sku' => $cancelledSeller->sku,
+        'unit_price' => '100.00',
+        'currency' => 'PHP',
+        'quantity' => 25,
+        'line_total' => '2500.00',
+    ]);
+
+    $this->get(route('home'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('topProducts', 8)
+            ->where('topProducts.0.name', 'Best Seller')
+            ->where('topProducts.0.soldCount', 7)
+            ->where('topProducts.1.name', 'Featured Unsold')
+            ->has('dailyDiscoverProducts', 40)
         );
 });

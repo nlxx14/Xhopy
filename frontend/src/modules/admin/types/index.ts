@@ -50,6 +50,10 @@ export interface AdminProductRow {
     isFeatured: boolean;
     featuredRank: number | null;
     imageUrl?: string | null;
+    colorImages?: Record<string, string>;
+    availableColors?: string[];
+    availableSizes?: string[];
+    variantStocks?: Record<string, number> | null;
 }
 
 export interface AdminCategoryRow {
@@ -80,6 +84,13 @@ export interface AdminOrderRow {
     shippingCity: string;
     shippingProvince: string;
     allowedTransitions: Array<{ value: string; label: string }>;
+    itemsPreview?: Array<{
+        id: number;
+        productName: string;
+        quantity: number;
+        selectedColor?: string | null;
+        selectedSize?: string | null;
+    }>;
 }
 
 export interface AdminCustomerRow {

@@ -127,6 +127,43 @@ function submitDeliveryWithPaymentChoice(markPaid: boolean): void {
                                 {{ order.placedAtFormatted }} ·
                                 {{ order.itemCount }} item(s)
                             </p>
+                            <ul
+                                v-if="
+                                    order.itemsPreview &&
+                                    order.itemsPreview.length > 0
+                                "
+                                class="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground"
+                            >
+                                <li
+                                    v-for="item in order.itemsPreview"
+                                    :key="item.id"
+                                >
+                                    <span class="font-medium text-foreground"
+                                        >{{ item.quantity }}×
+                                        {{ item.productName }}</span
+                                    >
+                                    <span
+                                        v-if="
+                                            item.selectedColor ||
+                                            item.selectedSize
+                                        "
+                                        class="text-primary"
+                                    >
+                                        ({{
+                                            [
+                                                item.selectedColor
+                                                    ? `Color: ${item.selectedColor}`
+                                                    : null,
+                                                item.selectedSize
+                                                    ? `Size: ${item.selectedSize}`
+                                                    : null,
+                                            ]
+                                                .filter(Boolean)
+                                                .join(', ')
+                                        }})
+                                    </span>
+                                </li>
+                            </ul>
                         </td>
                         <td class="px-4 py-3">
                             <p class="font-medium text-foreground">

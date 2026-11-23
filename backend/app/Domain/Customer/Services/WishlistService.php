@@ -81,7 +81,7 @@ final class WishlistService
             WishlistItem::query()
                 ->where('user_id', $user->id)
                 ->whereIn('product_id', $publishedIds)
-                ->with(['product.category:id,name,slug', 'product.primaryImage'])
+                ->with(['product.category:id,name,slug', 'product.primaryImage', 'product.images'])
                 ->orderByDesc('created_at')
                 ->orderByDesc('id')
                 ->limit(12)

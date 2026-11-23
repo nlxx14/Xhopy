@@ -172,6 +172,8 @@ const productForm = useForm({
     price: '0.00',
     compare_at_price: '',
     stock_quantity: 0,
+    available_colors: '',
+    available_sizes: '',
     status: 'active',
     is_featured: false,
     image_url: '',
@@ -179,6 +181,82 @@ const productForm = useForm({
 
 const selectedImageFile = ref<File | null>(null);
 const imagePreviewUrl = ref<string | null>(null);
+const colorImageFiles = ref<Record<string, File | null>>({});
+const colorImageUrls = ref<Record<string, string>>({});
+const colorImagePreviews = ref<Record<string, string>>({});
+const useVariantStocks = ref(false);
+const variantStockValues = ref<Record<string, number>>({});
+
+function parseCommaList(rawText: string): string[] {
+    const seen = new Set<string>();
+    const list: string[] = [];
+
+    for (const raw of rawText.split(',')) {
+        const value = raw.trim();
+        if (value !== '' && !seen.has(value)) {
+            seen.add(value);
+            list.push(value);
+        }
+    }
+
+    return list;
+}
+
+const parsedColorList = computed<string[]>(() =>
+    parseCommaList(productForm.available_colors),
+);
+
+const parsedSizeList = computed<string[]>(() =>
+    parseCommaList(productForm.available_sizes),
+);
+
+interface VariantCombination {
+    key: string;
+    color: string;
+    size: string;
+    label: string;
+}
+
+const variantCombinations = computed<VariantCombination[]>(() => {
+    const hasColors = parsedColorList.value.length > 0;
+    const hasSizes = parsedSizeList.value.length > 0;
+    if (!hasColors && !hasSizes) {
+        return [];
+    }
+
+    const colors = hasColors ? parsedColorList.value : [''];
+    const sizes = hasSizes ? parsedSizeList.value : [''];
+    const result: VariantCombination[] = [];
+
+    for (const color of colors) {
+        for (const size of sizes) {
+            const key = `${color}|${size}`;
+            const label = [color, size]
+                .filter((part) => part !== '')
+                .join(' / ');
+            result.push({ key, color, size, label });
+        }
+    }
+
+    return result;
+});
+
+const variantTotalStock = computed<number>(() =>
+    variantCombinations.value.reduce(
+        (sum, combo) =>
+            sum +
+            Math.max(0, Number(variantStockValues.value[combo.key] ?? 0) || 0),
+        0,
+    ),
+);
+
+function setVariantStock(key: string, value: string | number): void {
+    const numeric = Math.max(0, Number.parseInt(String(value || '0'), 10) || 0);
+    variantStockValues.value = {
+        ...variantStockValues.value,
+        [key]: numeric,
+    };
+}
 
 function handleProductImageSelect(event: Event): void {
     const input = event.target as HTMLInputElement;
@@ -190,6 +268,41 @@ function handleProductImageSelect(event: Event): void {
     } else {
         imagePreviewUrl.value = editingProduct.value?.imageUrl ?? null;
     }
+}
+
+function handleColorImageSelect(color: string, event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    colorImageFiles.value = {
+        ...colorImageFiles.value,
+        [color]: file,
+    };
+
+    if (file) {
+        colorImagePreviews.value = {
+            ...colorImagePreviews.value,
+            [color]: URL.createObjectURL(file),
+        };
+    } else {
+        const existingUrl = editingProduct.value?.colorImages?.[color];
+        if (existingUrl) {
+            colorImagePreviews.value = {
+                ...colorImagePreviews.value,
+                [color]: existingUrl,
+            };
+        } else {
+            const next = { ...colorImagePreviews.value };
+            delete next[color];
+            colorImagePreviews.value = next;
+        }
+    }
+}
+
+function setColorImageUrl(color: string, value: string | number): void {
+    colorImageUrls.value = {
+        ...colorImageUrls.value,
+        [color]: String(value),
+    };
 }
 
 const categoryForm = useForm({
@@ -230,9 +343,16 @@ function openCreateProduct(): void {
         ? String(props.categories[0].id)
         : '';
     productForm.status = 'active';
+    productForm.available_colors = '';
+    productForm.available_sizes = '';
     productForm.image_url = '';
     selectedImageFile.value = null;
     imagePreviewUrl.value = null;
+    colorImageFiles.value = {};
+    colorImageUrls.value = {};
+    colorImagePreviews.value = {};
+    useVariantStocks.value = false;
+    variantStockValues.value = {};
     productDialogOpen.value = true;
 }
 
@@ -248,6 +368,8 @@ function openEditProduct(product: AdminProductRow): void {
     productForm.price = product.price;
     productForm.compare_at_price = product.compareAtPrice ?? '';
     productForm.stock_quantity = product.stockQuantity;
+    productForm.available_colors = (product.availableColors ?? []).join(', ');
+    productForm.available_sizes = (product.availableSizes ?? []).join(', ');
     productForm.status = product.status;
     productForm.is_featured = product.isFeatured;
     productForm.image_url =
@@ -256,7 +378,58 @@ function openEditProduct(product: AdminProductRow): void {
             : '';
     selectedImageFile.value = null;
     imagePreviewUrl.value = product.imageUrl ?? null;
+    colorImageFiles.value = {};
+    const existingColorMap = product.colorImages ?? {};
+    const urls: Record<string, string> = {};
+    for (const [color, url] of Object.entries(existingColorMap)) {
+        if (url.startsWith('https://')) {
+            urls[color] = url;
+        }
+    }
+    colorImageUrls.value = urls;
+    colorImagePreviews.value = { ...existingColorMap };
+    const existingVariantStocks = product.variantStocks ?? null;
+    if (
+        existingVariantStocks &&
+        Object.keys(existingVariantStocks).length > 0
+    ) {
+        useVariantStocks.value = true;
+        variantStockValues.value = { ...existingVariantStocks };
+    } else {
+        useVariantStocks.value = false;
+        variantStockValues.value = {};
+    }
     productDialogOpen.value = true;
+}
+
+function buildProductPayload(
+    data: Record<string, unknown>,
+): Record<string, unknown> {
+    const hasCustomVariantStock =
+        useVariantStocks.value && variantCombinations.value.length > 0;
+
+    return {
+        ...data,
+        stock_quantity: hasCustomVariantStock
+            ? variantTotalStock.value
+            : data.stock_quantity,
+        image: selectedImageFile.value,
+        color_images: parsedColorList.value.map((color) => ({
+            color,
+            file: colorImageFiles.value[color] ?? null,
+            url: colorImageUrls.value[color] ?? '',
+        })),
+        variant_stock_entries: hasCustomVariantStock
+            ? variantCombinations.value.map((combo) => ({
+                  color: combo.color,
+                  size: combo.size,
+                  quantity: Math.max(
+                      0,
+                      Number(variantStockValues.value[combo.key] ?? 0) || 0,
+                  ),
+              }))
+            : [],
+    };
 }
 
 function submitProduct(): void {
@@ -264,10 +437,7 @@ function submitProduct(): void {
     if (target) {
         productForm._method = 'put';
         productForm
-            .transform((data) => ({
-                ...data,
-                image: selectedImageFile.value,
-            }))
+            .transform((data) => buildProductPayload(data))
             .post(updateProductRoute.url(target.id), {
                 forceFormData: true,
                 preserveScroll: true,
@@ -278,10 +448,7 @@ function submitProduct(): void {
     } else {
         productForm._method = 'post';
         productForm
-            .transform((data) => ({
-                ...data,
-                image: selectedImageFile.value,
-            }))
+            .transform((data) => buildProductPayload(data))
             .post(storeProductRoute.url(), {
                 forceFormData: true,
                 preserveScroll: true,
@@ -555,6 +722,48 @@ function submitCsvImport(): void {
                                     <p class="text-xs text-muted-foreground">
                                         SKU: {{ product.sku }}
                                     </p>
+                                    <div
+                                        v-if="
+                                            (product.availableColors &&
+                                                product.availableColors.length >
+                                                    0) ||
+                                            (product.availableSizes &&
+                                                product.availableSizes.length >
+                                                    0)
+                                        "
+                                        class="mt-1 flex flex-wrap gap-1"
+                                    >
+                                        <span
+                                            v-if="
+                                                product.availableColors &&
+                                                product.availableColors.length >
+                                                    0
+                                            "
+                                            class="rounded-md border border-border/80 bg-secondary/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                        >
+                                            Colors:
+                                            {{
+                                                product.availableColors.join(
+                                                    ', ',
+                                                )
+                                            }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                product.availableSizes &&
+                                                product.availableSizes.length >
+                                                    0
+                                            "
+                                            class="rounded-md border border-border/80 bg-secondary/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                        >
+                                            Sizes:
+                                            {{
+                                                product.availableSizes.join(
+                                                    ', ',
+                                                )
+                                            }}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </td>
@@ -740,8 +949,26 @@ function submitCsvImport(): void {
                         </div>
 
                         <div class="grid gap-1.5">
-                            <Label for="prod_stock">Stock Quantity</Label>
+                            <Label for="prod_stock">
+                                {{
+                                    useVariantStocks &&
+                                    variantCombinations.length > 0
+                                        ? 'Total Stock (Auto)'
+                                        : 'Stock Quantity'
+                                }}
+                            </Label>
                             <Input
+                                v-if="
+                                    useVariantStocks &&
+                                    variantCombinations.length > 0
+                                "
+                                id="prod_stock"
+                                :model-value="variantTotalStock"
+                                type="number"
+                                disabled
+                            />
+                            <Input
+                                v-else
                                 id="prod_stock"
                                 v-model="productForm.stock_quantity"
                                 type="number"
@@ -751,6 +978,103 @@ function submitCsvImport(): void {
                             <InputError
                                 :message="productForm.errors.stock_quantity"
                             />
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                        <div class="grid gap-1.5">
+                            <Label for="prod_colors">
+                                Available Colors (optional)
+                            </Label>
+                            <Input
+                                id="prod_colors"
+                                v-model="productForm.available_colors"
+                                placeholder="Black, Crimson Red, White"
+                            />
+                            <p class="text-[11px] text-muted-foreground">
+                                Separate multiple colors with commas.
+                            </p>
+                            <InputError
+                                :message="productForm.errors.available_colors"
+                            />
+                        </div>
+
+                        <div class="grid gap-1.5">
+                            <Label for="prod_sizes">
+                                Available Sizes or Specs (optional)
+                            </Label>
+                            <Input
+                                id="prod_sizes"
+                                v-model="productForm.available_sizes"
+                                placeholder="S, M, L, XL or 14mm, 16mm"
+                            />
+                            <p class="text-[11px] text-muted-foreground">
+                                Separate multiple sizes with commas.
+                            </p>
+                            <InputError
+                                :message="productForm.errors.available_sizes"
+                            />
+                        </div>
+                    </div>
+
+                    <!-- Per-Variant Stock Breakdown -->
+                    <div
+                        v-if="variantCombinations.length > 0"
+                        class="space-y-3 rounded-xl border border-border/80 bg-secondary/15 p-3.5"
+                    >
+                        <label
+                            class="flex cursor-pointer items-center justify-between gap-2 text-xs font-semibold text-foreground"
+                        >
+                            <span>
+                                Set different stock quantity per variant ({{
+                                    variantCombinations.length
+                                }}
+                                {{
+                                    variantCombinations.length === 1
+                                        ? 'variant'
+                                        : 'variants'
+                                }})
+                            </span>
+                            <Checkbox
+                                :model-value="useVariantStocks"
+                                @update:model-value="
+                                    useVariantStocks = $event === true
+                                "
+                            />
+                        </label>
+
+                        <div v-if="useVariantStocks" class="space-y-2">
+                            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <div
+                                    v-for="combo in variantCombinations"
+                                    :key="combo.key"
+                                    class="flex items-center justify-between gap-2 rounded-lg border border-border/70 bg-background/70 px-3 py-2"
+                                >
+                                    <span
+                                        class="truncate text-xs font-medium text-foreground"
+                                    >
+                                        {{ combo.label }}
+                                    </span>
+                                    <Input
+                                        :model-value="
+                                            variantStockValues[combo.key] ?? 0
+                                        "
+                                        type="number"
+                                        min="0"
+                                        class="h-8 w-20 text-right text-xs"
+                                        :aria-label="`Stock for ${combo.label}`"
+                                        @update:model-value="
+                                            setVariantStock(combo.key, $event)
+                                        "
+                                    />
+                                </div>
+                            </div>
+                            <p class="text-[11px] text-muted-foreground">
+                                Total stock across all variants:
+                                <strong class="text-foreground">{{
+                                    variantTotalStock
+                                }}</strong>
+                            </p>
                         </div>
                     </div>
 
@@ -836,6 +1160,72 @@ function submitCsvImport(): void {
                             <InputError
                                 :message="productForm.errors.image_url"
                             />
+                        </div>
+                    </div>
+
+                    <!-- Per-Color Photo Uploaders -->
+                    <div
+                        v-if="parsedColorList.length > 0"
+                        class="space-y-3 rounded-xl border border-border/80 bg-secondary/15 p-3.5"
+                    >
+                        <div class="space-y-0.5">
+                            <p class="text-xs font-semibold text-foreground">
+                                Photo per Color Variant
+                            </p>
+                            <p class="text-[11px] text-muted-foreground">
+                                Upload a photo for each color so customers see
+                                the matching product image when they click a
+                                color.
+                            </p>
+                        </div>
+
+                        <div class="space-y-2.5">
+                            <div
+                                v-for="(color, colorIndex) in parsedColorList"
+                                :key="color"
+                                class="flex flex-col gap-2 rounded-lg border border-border/70 bg-background/70 p-2.5"
+                            >
+                                <div
+                                    class="flex items-center justify-between gap-2"
+                                >
+                                    <span
+                                        class="text-xs font-semibold text-foreground"
+                                    >
+                                        {{ color }} Photo
+                                    </span>
+
+                                    <div
+                                        v-if="colorImagePreviews[color]"
+                                        class="size-10 shrink-0 overflow-hidden rounded-md border border-border bg-background"
+                                    >
+                                        <img
+                                            :src="colorImagePreviews[color]"
+                                            :alt="`${color} preview`"
+                                            class="size-full object-cover"
+                                        />
+                                    </div>
+                                </div>
+
+                                <input
+                                    :id="`prod_color_img_${colorIndex}`"
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    class="block w-full cursor-pointer text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-secondary file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-foreground hover:file:bg-secondary/80"
+                                    @change="
+                                        handleColorImageSelect(color, $event)
+                                    "
+                                />
+
+                                <Input
+                                    :model-value="colorImageUrls[color] ?? ''"
+                                    type="url"
+                                    :placeholder="`Or paste secure URL for ${color} (optional)`"
+                                    class="h-8 text-xs"
+                                    @update:model-value="
+                                        setColorImageUrl(color, $event)
+                                    "
+                                />
+                            </div>
                         </div>
                     </div>
 

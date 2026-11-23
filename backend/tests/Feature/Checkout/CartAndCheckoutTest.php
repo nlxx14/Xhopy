@@ -181,3 +181,68 @@ test('checkout aborts and rolls back if stock becomes insufficient before confir
     expect(Order::query()->count())->toBe(0)
         ->and($product->fresh()->stock_quantity)->toBe(1);
 });
+
+test('per-variant stocks enforce limits independently, deduct atomically on checkout, and restore on cancellation', function () {
+    $customer = User::factory()->create();
+    $address = CustomerAddress::factory()->for($customer)->create();
+
+    $product = Product::factory()->create([
+        'name' => 'Kuikma Paddle',
+        'price' => '1400.00',
+        'available_colors' => ['Blue', 'Red', 'Purple'],
+        'variant_stocks' => [
+            'Blue|' => 5,
+            'Red|' => 2,
+            'Purple|' => 0,
+        ],
+        'stock_quantity' => 7,
+    ]);
+
+    // Adding out-of-stock variant Purple is rejected
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'selected_color' => 'Purple',
+    ])->assertSessionHasErrors('quantity');
+
+    // Adding more than Red's variant limit (2) is rejected
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 3,
+        'selected_color' => 'Red',
+    ])->assertSessionHasErrors('quantity');
+
+    // Adding valid Red (2) and Blue (1) succeeds independently
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 2,
+        'selected_color' => 'Red',
+    ])->assertSessionHasNoErrors();
+
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'selected_color' => 'Blue',
+    ])->assertSessionHasNoErrors();
+
+    // Checkout deducts Red -> 0, Blue -> 4, total stock -> 4
+    $this->actingAs($customer)->post(route('checkout.store'), [
+        'payment_method' => 'paymongo_checkout',
+        'address_id' => $address->id,
+    ])->assertRedirect();
+
+    $product->refresh();
+    expect($product->stock_quantity)->toBe(4)
+        ->and($product->stockForVariant('Red'))->toBe(0)
+        ->and($product->stockForVariant('Blue'))->toBe(4);
+
+    // Cancelling the order restores Red -> 2, Blue -> 5, total stock -> 7
+    $order = Order::query()->firstOrFail();
+    $this->actingAs($customer)->post(route('orders.cancel', $order->order_number))->assertRedirect();
+
+    $product->refresh();
+    expect($order->fresh()->status)->toBe(OrderStatus::Cancelled)
+        ->and($product->stock_quantity)->toBe(7)
+        ->and($product->stockForVariant('Red'))->toBe(2)
+        ->and($product->stockForVariant('Blue'))->toBe(5);
+});

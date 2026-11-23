@@ -22,6 +22,12 @@ import ProductCard from '@modules/catalog/components/ProductCard.vue';
 import ProductGallery from '@modules/catalog/components/ProductGallery.vue';
 import QuantitySelector from '@modules/catalog/components/QuantitySelector.vue';
 import RatingDisplay from '@modules/catalog/components/RatingDisplay.vue';
+import {
+    hasCustomVariantStocks,
+    isOptionOptionInStock,
+    pickInitialVariant,
+    resolveVariantStock,
+} from '@modules/catalog/utils/variantStock';
 import type { ProductDetail, ProductSummary } from '@modules/catalog/types';
 import {
     StorefrontLayout,
@@ -54,11 +60,56 @@ const props = withDefaults(
     },
 );
 
+const initialVariant = pickInitialVariant(props.product);
 const cartPreview = useCartPreview();
 const quantity = ref(1);
+const selectedColor = ref<string | null>(initialVariant.color);
+const selectedSize = ref<string | null>(initialVariant.size);
 const justAdded = ref(false);
 const statusAnnouncement = ref('');
 let resetTimer: number | undefined;
+
+const activeVariantStock = computed<number>(() =>
+    resolveVariantStock(props.product, selectedColor.value, selectedSize.value),
+);
+
+const activeVariantInStock = computed<boolean>(
+    () => props.product.inStock && activeVariantStock.value > 0,
+);
+
+const maxOrderQuantity = computed<number>(() =>
+    Math.min(20, Math.max(1, activeVariantStock.value)),
+);
+
+const activeStockBadgeLabel = computed<string>(() => {
+    if (!activeVariantInStock.value) {
+        return 'Out of Stock';
+    }
+    if (hasCustomVariantStocks(props.product)) {
+        return `${activeVariantStock.value} in stock`;
+    }
+    if (typeof props.product.stockQuantity === 'number') {
+        return `In Stock (${props.product.stockQuantity})`;
+    }
+    return props.product.stockLabel;
+});
+
+watch(activeVariantStock, (nextStock) => {
+    const cap = Math.min(20, Math.max(1, nextStock));
+    if (quantity.value > cap) {
+        quantity.value = cap;
+    }
+});
+
+watch(
+    () => props.product.id,
+    () => {
+        const picked = pickInitialVariant(props.product);
+        selectedColor.value = picked.color;
+        selectedSize.value = picked.size;
+        quantity.value = 1;
+    },
+);
 
 onBeforeUnmount(() => {
     if (resetTimer !== undefined) {
@@ -111,7 +162,7 @@ function handleSelectCategory(slug: string | null): void {
 }
 
 function handleAddCurrentToCart(): void {
-    if (!props.product.inStock) {
+    if (!activeVariantInStock.value) {
         return;
     }
 
@@ -125,7 +176,12 @@ function handleAddCurrentToCart(): void {
     if (typeof props.product.id === 'number') {
         router.post(
             storeCartItem.url(),
-            { product_id: props.product.id, quantity: quantity.value },
+            {
+                product_id: props.product.id,
+                quantity: quantity.value,
+                selected_color: selectedColor.value ?? undefined,
+                selected_size: selectedSize.value ?? undefined,
+            },
             { preserveScroll: true, preserveState: true },
         );
     }
@@ -147,7 +203,7 @@ const isBuyingNow = ref(false);
 
 function handleBuyCurrentNow(): void {
     if (
-        !props.product.inStock ||
+        !activeVariantInStock.value ||
         isBuyingNow.value ||
         typeof props.product.id !== 'number'
     ) {
@@ -161,6 +217,8 @@ function handleBuyCurrentNow(): void {
         {
             product_id: props.product.id,
             quantity: quantity.value,
+            selected_color: selectedColor.value ?? undefined,
+            selected_size: selectedSize.value ?? undefined,
             buy_now: true,
         },
         {
@@ -180,7 +238,12 @@ function handleAddRelatedToCart(item: ProductSummary): void {
     if (typeof item.id === 'number') {
         router.post(
             storeCartItem.url(),
-            { product_id: item.id, quantity: 1 },
+            {
+                product_id: item.id,
+                quantity: 1,
+                selected_color: item.selectedColor ?? undefined,
+                selected_size: item.selectedSize ?? undefined,
+            },
             { preserveScroll: true, preserveState: true },
         );
     }
@@ -274,6 +337,8 @@ function handleSubmitReview(): void {
                     <ProductGallery
                         :images="product.images"
                         :product-name="product.name"
+                        :selected-color="selectedColor"
+                        @select-color="selectedColor = $event"
                     />
                 </div>
 
@@ -300,11 +365,13 @@ function handleSubmitReview(): void {
 
                             <Badge
                                 :variant="
-                                    product.inStock ? 'secondary' : 'outline'
+                                    activeVariantInStock
+                                        ? 'secondary'
+                                        : 'outline'
                                 "
                                 class="text-xs font-medium"
                             >
-                                {{ product.stockLabel }}
+                                {{ activeStockBadgeLabel }}
                             </Badge>
 
                             <span
@@ -351,6 +418,103 @@ function handleSubmitReview(): void {
                             {{ product.shortDescription }}
                         </p>
 
+                        <!-- Color & Size Selectors -->
+                        <div
+                            v-if="
+                                (product.availableColors &&
+                                    product.availableColors.length > 0) ||
+                                (product.availableSizes &&
+                                    product.availableSizes.length > 0)
+                            "
+                            class="space-y-4 rounded-2xl border border-border bg-secondary/25 p-4"
+                        >
+                            <div
+                                v-if="
+                                    product.availableColors &&
+                                    product.availableColors.length > 0
+                                "
+                                class="space-y-2"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span
+                                        class="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Select Color
+                                    </span>
+                                    <span
+                                        class="text-xs font-bold text-foreground"
+                                    >
+                                        {{ selectedColor }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="color in product.availableColors"
+                                        :key="color"
+                                        type="button"
+                                        :class="[
+                                            'rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all',
+                                            selectedColor === color
+                                                ? 'border-primary bg-brand-subtle/70 text-primary shadow-2xs ring-1 ring-primary/30'
+                                                : 'border-border bg-card text-foreground/80 hover:border-primary/40 hover:text-foreground',
+                                            !isOptionOptionInStock(
+                                                product,
+                                                'color',
+                                                color,
+                                            ) && 'line-through opacity-50',
+                                        ]"
+                                        :aria-pressed="selectedColor === color"
+                                        @click="selectedColor = color"
+                                    >
+                                        {{ color }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div
+                                v-if="
+                                    product.availableSizes &&
+                                    product.availableSizes.length > 0
+                                "
+                                class="space-y-2"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <span
+                                        class="text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+                                    >
+                                        Select Size / Spec
+                                    </span>
+                                    <span
+                                        class="text-xs font-bold text-foreground"
+                                    >
+                                        {{ selectedSize }}
+                                    </span>
+                                </div>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="size in product.availableSizes"
+                                        :key="size"
+                                        type="button"
+                                        :class="[
+                                            'rounded-xl border px-3.5 py-2 text-xs font-semibold transition-all',
+                                            selectedSize === size
+                                                ? 'border-primary bg-brand-subtle/70 text-primary shadow-2xs ring-1 ring-primary/30'
+                                                : 'border-border bg-card text-foreground/80 hover:border-primary/40 hover:text-foreground',
+                                            !isOptionOptionInStock(
+                                                product,
+                                                'size',
+                                                size,
+                                            ) && 'line-through opacity-50',
+                                        ]"
+                                        :aria-pressed="selectedSize === size"
+                                        @click="selectedSize = size"
+                                    >
+                                        {{ size }}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Purchase Controls -->
                         <div class="space-y-4 pt-2">
                             <div
@@ -358,7 +522,8 @@ function handleSubmitReview(): void {
                             >
                                 <QuantitySelector
                                     v-model="quantity"
-                                    :disabled="!product.inStock"
+                                    :max="maxOrderQuantity"
+                                    :disabled="!activeVariantInStock"
                                 />
 
                                 <Button
@@ -366,13 +531,15 @@ function handleSubmitReview(): void {
                                     size="lg"
                                     class="h-11 flex-1 gap-2 rounded-xl text-sm font-semibold"
                                     :variant="
-                                        product.inStock
+                                        activeVariantInStock
                                             ? 'outline'
                                             : 'secondary'
                                     "
-                                    :disabled="!product.inStock || isBuyingNow"
+                                    :disabled="
+                                        !activeVariantInStock || isBuyingNow
+                                    "
                                     :aria-label="
-                                        product.inStock
+                                        activeVariantInStock
                                             ? `Add ${product.name} to cart`
                                             : `${product.name} is out of stock`
                                     "
@@ -390,7 +557,7 @@ function handleSubmitReview(): void {
                                     />
                                     <span>
                                         {{
-                                            !product.inStock
+                                            !activeVariantInStock
                                                 ? 'Out of Stock'
                                                 : justAdded
                                                   ? 'Added to Cart'
@@ -400,7 +567,7 @@ function handleSubmitReview(): void {
                                 </Button>
 
                                 <Button
-                                    v-if="product.inStock"
+                                    v-if="activeVariantInStock"
                                     type="button"
                                     size="lg"
                                     class="h-11 flex-1 gap-2 rounded-xl text-sm font-semibold"

@@ -7,6 +7,7 @@ use App\Domain\Inventory\Enums\StockMovementType;
 use App\Domain\Inventory\Services\InventoryService;
 use App\Domain\Orders\Enums\OrderStatus;
 use App\Domain\Orders\Models\Order;
+use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\OrderStatusHistory;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -66,16 +67,17 @@ final class OrderStateTransitionService
     {
         $order->load('items');
 
-        $productQuantities = [];
+        /** @var array<int, list<OrderItem>> $itemsByProduct */
+        $itemsByProduct = [];
         foreach ($order->items as $item) {
             if ($item->product_id !== null) {
-                $productQuantities[$item->product_id] = ($productQuantities[$item->product_id] ?? 0) + $item->quantity;
+                $itemsByProduct[$item->product_id][] = $item;
             }
         }
 
-        ksort($productQuantities);
+        ksort($itemsByProduct);
 
-        foreach ($productQuantities as $productId => $quantity) {
+        foreach ($itemsByProduct as $productId => $items) {
             $product = Product::query()
                 ->whereKey($productId)
                 ->lockForUpdate()
@@ -86,7 +88,23 @@ final class OrderStateTransitionService
             }
 
             $previous = $product->stock_quantity;
-            $product->stock_quantity = $previous + $quantity;
+
+            if ($product->hasVariantStocks()) {
+                foreach ($items as $item) {
+                    $product->adjustVariantStock(
+                        $item->selected_color,
+                        $item->selected_size,
+                        $item->quantity,
+                    );
+                }
+            } else {
+                $totalRestored = 0;
+                foreach ($items as $item) {
+                    $totalRestored += $item->quantity;
+                }
+                $product->stock_quantity = $previous + $totalRestored;
+            }
+
             $product->save();
 
             $this->inventory->recordMovementForLockedProduct(

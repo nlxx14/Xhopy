@@ -62,6 +62,13 @@ export type OrderSummary = {
     placedAtFormatted: string;
     placedAtDiff: string;
     canCancel: boolean;
+    itemsPreview?: Array<{
+        id: number;
+        productName: string;
+        quantity: number;
+        selectedColor?: string | null;
+        selectedSize?: string | null;
+    }>;
 };
 
 export type OrderItemReviewSummary = {
@@ -78,6 +85,8 @@ export type OrderLineItemSnapshot = {
     productName: string;
     productSlug: string;
     sku: string;
+    selectedColor?: string | null;
+    selectedSize?: string | null;
     quantity: number;
     unitPriceFormatted: string;
     lineTotalFormatted: string;
