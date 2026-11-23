@@ -49,6 +49,7 @@ export interface AdminProductRow {
     status: 'draft' | 'active' | 'archived';
     isFeatured: boolean;
     featuredRank: number | null;
+    imageUrl?: string | null;
 }
 
 export interface AdminCategoryRow {

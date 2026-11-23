@@ -110,6 +110,11 @@ test.describe('XHopy Batch 2 Storefront Shell & Design System', () => {
         ).toBeFocused();
 
         await page.keyboard.press('Tab');
+        await expect(
+            page.getByRole('button', { name: 'Browse product categories' }),
+        ).toBeFocused();
+
+        await page.keyboard.press('Tab');
         const searchInput = page.locator('#desktop-catalog-search');
         await expect(searchInput).toBeFocused();
     });

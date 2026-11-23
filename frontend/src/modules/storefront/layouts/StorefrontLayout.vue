@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import PromoMarquee from '@modules/storefront/components/PromoMarquee.vue';
 import SiteFooter from '@modules/storefront/components/SiteFooter.vue';
 import SiteHeader from '@modules/storefront/components/SiteHeader.vue';
 import type { CartSummary } from '@modules/cart';
@@ -42,6 +43,8 @@ const emit = defineEmits<{
             @select-category="emit('selectCategory', $event)"
             @open-cart="emit('openCart')"
         />
+
+        <PromoMarquee />
 
         <main id="main-content" tabindex="-1" class="flex-1 focus:outline-none">
             <slot />

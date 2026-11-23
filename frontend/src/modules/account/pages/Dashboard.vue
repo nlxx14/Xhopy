@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     ArrowRight,
     Check,
@@ -7,21 +7,34 @@ import {
     Heart,
     ImageOff,
     MapPin,
+    MessageSquarePlus,
     Package,
     RotateCcw,
     ShieldCheck,
     ShoppingBag,
     ShoppingCart,
+    Star,
     Store,
     Trash2,
     Truck,
 } from '@lucide/vue';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { CustomerAddress, OrderSummary } from '@modules/account/types';
 import type { ProductSummary } from '@modules/catalog';
 import EmptyState from '@shared/components/EmptyState.vue';
+import InputError from '@shared/components/InputError.vue';
 import { Badge } from '@shared/components/ui/badge';
 import { Button } from '@shared/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@shared/components/ui/dialog';
+import { Input } from '@shared/components/ui/input';
+import { Label } from '@shared/components/ui/label';
 import { dashboard } from '@/routes';
 import { index as addressesIndex } from '@/routes/addresses';
 import { dashboard as adminDashboard } from '@/routes/admin';
@@ -38,6 +51,15 @@ export interface ActiveOrderTracker extends OrderSummary {
         key: string;
         label: string;
     }>;
+}
+
+export interface PendingDeliveredReview {
+    productId: number;
+    productName: string;
+    productSlug: string;
+    sku: string;
+    orderNumber: string;
+    deliveredAtDiff: string;
 }
 
 defineOptions({
@@ -69,6 +91,7 @@ const props = withDefaults(
         activeOrderTracker?: ActiveOrderTracker | null;
         wishlistItems?: ProductSummary[];
         buyAgainItems?: ProductSummary[];
+        pendingReviews?: PendingDeliveredReview[];
         accountSecurity?: {
             emailVerified: boolean;
             twoFactorEnabled: boolean;
@@ -85,6 +108,7 @@ const props = withDefaults(
         activeOrderTracker: null,
         wishlistItems: () => [],
         buyAgainItems: () => [],
+        pendingReviews: () => [],
         accountSecurity: () => ({
             emailVerified: true,
             twoFactorEnabled: false,
@@ -117,6 +141,46 @@ function handleRemoveFromWishlist(product: ProductSummary): void {
 
     router.delete(destroyWishlistRoute.url(product.id), {
         preserveScroll: true,
+    });
+}
+
+const reviewDialogOpen = ref(false);
+const activeReviewItem = ref<PendingDeliveredReview | null>(null);
+const reviewForm = useForm({
+    rating: 5,
+    title: '',
+    comment: '',
+});
+
+const starLabels: Record<number, string> = {
+    1: 'Poor',
+    2: 'Fair',
+    3: 'Good',
+    4: 'Very Good',
+    5: 'Excellent',
+};
+
+function openReviewDialog(item: PendingDeliveredReview): void {
+    activeReviewItem.value = item;
+    reviewForm.rating = 5;
+    reviewForm.title = '';
+    reviewForm.comment = '';
+    reviewForm.clearErrors();
+    reviewDialogOpen.value = true;
+}
+
+function submitReview(): void {
+    const productId = activeReviewItem.value?.productId;
+
+    if (typeof productId !== 'number') {
+        return;
+    }
+
+    reviewForm.post(`/products/${productId}/reviews`, {
+        preserveScroll: true,
+        onSuccess: () => {
+            reviewDialogOpen.value = false;
+        },
     });
 }
 </script>
@@ -199,6 +263,80 @@ function handleRemoveFromWishlist(product: ProductSummary): void {
                         </Link>
                     </Button>
                 </div>
+            </div>
+        </section>
+
+        <!-- Post-Delivery Review Request Prompt (Shown when an order is Delivered & Awaiting Review) -->
+        <section
+            v-if="props.pendingReviews.length > 0"
+            aria-labelledby="dashboard-review-prompt-heading"
+            class="space-y-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-5 shadow-2xs sm:p-6"
+        >
+            <div
+                class="flex flex-col justify-between gap-2 sm:flex-row sm:items-center"
+            >
+                <div class="space-y-1">
+                    <div
+                        class="inline-flex items-center gap-1.5 text-xs font-semibold tracking-wider text-amber-500 uppercase"
+                    >
+                        <Star
+                            class="size-3.5 fill-amber-500 text-amber-500"
+                            aria-hidden="true"
+                        />
+                        <span>Order Delivered — Share Your Experience</span>
+                    </div>
+                    <h2
+                        id="dashboard-review-prompt-heading"
+                        class="text-base font-bold text-foreground sm:text-lg"
+                    >
+                        How was your delivered purchase?
+                    </h2>
+                    <p class="text-xs text-muted-foreground">
+                        Your order has been successfully delivered. Please take
+                        a moment to rate and review your purchased items.
+                    </p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <article
+                    v-for="item in props.pendingReviews"
+                    :key="`${item.orderNumber}-${item.productId}`"
+                    class="flex items-center justify-between gap-3 rounded-xl border border-border/80 bg-card p-3.5"
+                >
+                    <div class="min-w-0 space-y-0.5">
+                        <Link
+                            :href="productShow.url(item.productSlug)"
+                            class="block truncate text-sm font-semibold text-foreground hover:text-primary"
+                        >
+                            {{ item.productName }}
+                        </Link>
+                        <p class="text-xs text-muted-foreground">
+                            Order
+                            <Link
+                                :href="orderShow.url(item.orderNumber)"
+                                class="font-medium text-foreground hover:underline"
+                            >
+                                {{ item.orderNumber }}
+                            </Link>
+                            · Delivered {{ item.deliveredAtDiff }}
+                        </p>
+                    </div>
+
+                    <Button
+                        type="button"
+                        size="sm"
+                        class="h-8 shrink-0 gap-1.5 rounded-xl text-xs font-semibold"
+                        :data-test="`dashboard-rate-item-${item.productId}`"
+                        @click="openReviewDialog(item)"
+                    >
+                        <Star
+                            class="size-3.5 fill-current"
+                            aria-hidden="true"
+                        />
+                        <span>Rate &amp; Review</span>
+                    </Button>
+                </article>
             </div>
         </section>
 
@@ -803,5 +941,122 @@ function handleRemoveFromWishlist(product: ProductSummary): void {
                 </section>
             </div>
         </div>
+
+        <!-- Post-Delivery Rating & Feedback Dialog -->
+        <Dialog v-model:open="reviewDialogOpen">
+            <DialogContent class="sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle class="flex items-center gap-2">
+                        <MessageSquarePlus
+                            class="size-4 text-primary"
+                            aria-hidden="true"
+                        />
+                        <span>Rate Your Delivered Item</span>
+                    </DialogTitle>
+                    <DialogDescription v-if="activeReviewItem">
+                        Share your verified customer rating and feedback for
+                        <strong class="text-foreground">{{
+                            activeReviewItem.productName
+                        }}</strong>
+                        from order
+                        <strong class="text-foreground">{{
+                            activeReviewItem.orderNumber
+                        }}</strong
+                        >.
+                    </DialogDescription>
+                </DialogHeader>
+
+                <form class="space-y-4 py-2" @submit.prevent="submitReview">
+                    <div class="space-y-2">
+                        <Label>Overall Rating</Label>
+                        <div class="flex items-center gap-2">
+                            <div
+                                class="flex items-center gap-1"
+                                role="radiogroup"
+                                aria-label="Select a star rating from 1 to 5"
+                            >
+                                <button
+                                    v-for="star in 5"
+                                    :key="star"
+                                    type="button"
+                                    class="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-secondary/30 transition-colors hover:border-amber-500/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                    :aria-label="`Rate ${star} out of 5 stars`"
+                                    :aria-checked="reviewForm.rating === star"
+                                    role="radio"
+                                    @click="reviewForm.rating = star"
+                                >
+                                    <Star
+                                        :class="[
+                                            'size-5 transition-transform',
+                                            star <= reviewForm.rating
+                                                ? 'scale-105 fill-amber-500 text-amber-500'
+                                                : 'text-muted-foreground/40',
+                                        ]"
+                                        aria-hidden="true"
+                                    />
+                                </button>
+                            </div>
+                            <span
+                                class="text-xs font-semibold text-muted-foreground"
+                            >
+                                {{ reviewForm.rating }}/5 —
+                                {{ starLabels[reviewForm.rating] }}
+                            </span>
+                        </div>
+                        <InputError :message="reviewForm.errors.rating" />
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <Label for="dashboard-review-title"
+                            >Headline (Optional)</Label
+                        >
+                        <Input
+                            id="dashboard-review-title"
+                            v-model="reviewForm.title"
+                            maxlength="120"
+                            placeholder="Summarize your experience in a few words"
+                        />
+                        <InputError :message="reviewForm.errors.title" />
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <Label for="dashboard-review-comment"
+                            >Your Feedback (Optional)</Label
+                        >
+                        <textarea
+                            id="dashboard-review-comment"
+                            v-model="reviewForm.comment"
+                            rows="4"
+                            maxlength="1500"
+                            placeholder="What did you like about the build quality, performance, or value?"
+                            class="flex min-h-24 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-2xs transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        />
+                        <InputError :message="reviewForm.errors.comment" />
+                    </div>
+
+                    <DialogFooter class="gap-2 pt-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            class="h-10 rounded-xl"
+                            @click="reviewDialogOpen = false"
+                        >
+                            Maybe Later
+                        </Button>
+                        <Button
+                            type="submit"
+                            class="h-10 rounded-xl"
+                            :disabled="reviewForm.processing"
+                        >
+                            {{
+                                reviewForm.processing
+                                    ? 'Saving...'
+                                    : 'Submit Verified Review'
+                            }}
+                        </Button>
+                    </DialogFooter>
+                </form>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

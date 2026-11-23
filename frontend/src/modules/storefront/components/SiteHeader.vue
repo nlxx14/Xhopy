@@ -1,11 +1,32 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Menu, ShieldCheck, User } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import {
+    ArrowRight,
+    Briefcase,
+    Check,
+    ChevronDown,
+    Headphones,
+    Home,
+    Layers,
+    LayoutGrid,
+    Menu,
+    Monitor,
+    ShieldCheck,
+    User,
+} from '@lucide/vue';
+import { computed, ref, type Component } from 'vue';
 import { CartButton, type CartSummary } from '@modules/cart';
 import SearchBox from '@modules/storefront/components/SearchBox.vue';
 import BrandLogo from '@shared/components/BrandLogo.vue';
 import { Button } from '@shared/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@shared/components/ui/dropdown-menu';
 import {
     Sheet,
     SheetContent,
@@ -16,6 +37,7 @@ import {
 } from '@shared/components/ui/sheet';
 import { dashboard, home, login, register } from '@/routes';
 import { dashboard as adminDashboard } from '@/routes/admin';
+import { index as productsIndex } from '@/routes/products';
 import type {
     AnnouncementBanner,
     CategorySummary,
@@ -49,6 +71,48 @@ const canAccessAdmin = computed(
     () => user.value?.role === 'staff' || user.value?.role === 'admin',
 );
 const mobileMenuOpen = ref(false);
+
+const activeCategory = computed<CategorySummary | null>(() => {
+    if (!props.selectedCategory) {
+        return null;
+    }
+
+    return (
+        props.categories.find((cat) => cat.slug === props.selectedCategory) ??
+        null
+    );
+});
+
+const totalProductCount = computed<number | null>(() => {
+    const counts = props.categories
+        .map((cat) => cat.productCount)
+        .filter((count): count is number => typeof count === 'number');
+
+    if (counts.length === 0) {
+        return null;
+    }
+
+    return counts.reduce((sum, count) => sum + count, 0);
+});
+
+function resolveCategoryIcon(category: CategorySummary): Component {
+    const haystack = `${category.slug} ${category.name}`.toLowerCase();
+
+    if (haystack.includes('audio') || haystack.includes('acoustic')) {
+        return Headphones;
+    }
+    if (haystack.includes('workspace') || haystack.includes('desk')) {
+        return Monitor;
+    }
+    if (haystack.includes('carry') || haystack.includes('edc')) {
+        return Briefcase;
+    }
+    if (haystack.includes('home') || haystack.includes('living')) {
+        return Home;
+    }
+
+    return Layers;
+}
 
 function handleMobileCategory(slug: string | null): void {
     mobileMenuOpen.value = false;
@@ -199,6 +263,175 @@ function handleMobileCategory(slug: string | null): void {
                     >
                         <BrandLogo size="lg" subtitle="Official Store" />
                     </Link>
+
+                    <!-- Desktop Categories Dropdown Pill next to Brand Logo -->
+                    <template v-if="props.categories.length > 0">
+                        <span
+                            class="hidden h-5 w-px bg-border/80 lg:block"
+                            aria-hidden="true"
+                        />
+
+                        <DropdownMenu>
+                            <DropdownMenuTrigger as-child>
+                                <button
+                                    type="button"
+                                    :class="[
+                                        'hidden h-10 items-center gap-2 rounded-full border px-3.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none lg:inline-flex',
+                                        activeCategory
+                                            ? 'border-primary/60 bg-brand-subtle/40 text-foreground'
+                                            : 'border-border bg-secondary/40 text-foreground hover:border-primary/40 hover:bg-secondary/70',
+                                    ]"
+                                    aria-label="Browse product categories"
+                                >
+                                    <component
+                                        :is="
+                                            activeCategory
+                                                ? resolveCategoryIcon(
+                                                      activeCategory,
+                                                  )
+                                                : LayoutGrid
+                                        "
+                                        class="size-3.5 text-primary"
+                                        aria-hidden="true"
+                                    />
+                                    <span class="max-w-36 truncate">
+                                        {{
+                                            activeCategory
+                                                ? activeCategory.name
+                                                : 'Categories'
+                                        }}
+                                    </span>
+                                    <ChevronDown
+                                        class="size-3.5 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                </button>
+                            </DropdownMenuTrigger>
+
+                            <DropdownMenuContent
+                                align="start"
+                                :side-offset="8"
+                                class="w-64 rounded-2xl border-border/80 p-1.5 shadow-lg"
+                            >
+                                <DropdownMenuLabel
+                                    class="px-2.5 py-1.5 text-[11px] font-semibold tracking-wider text-muted-foreground uppercase"
+                                >
+                                    Browse Departments
+                                </DropdownMenuLabel>
+                                <DropdownMenuSeparator />
+
+                                <DropdownMenuItem
+                                    class="flex cursor-pointer items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs font-medium"
+                                    @select="emit('selectCategory', null)"
+                                >
+                                    <span class="flex items-center gap-2.5">
+                                        <Layers
+                                            :class="[
+                                                'size-4',
+                                                !selectedCategory
+                                                    ? 'text-primary'
+                                                    : 'text-muted-foreground',
+                                            ]"
+                                            aria-hidden="true"
+                                        />
+                                        <span
+                                            :class="
+                                                !selectedCategory
+                                                    ? 'font-semibold text-foreground'
+                                                    : 'text-foreground'
+                                            "
+                                        >
+                                            All Categories
+                                        </span>
+                                    </span>
+                                    <span class="flex items-center gap-1.5">
+                                        <span
+                                            v-if="
+                                                typeof totalProductCount ===
+                                                'number'
+                                            "
+                                            class="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                        >
+                                            {{ totalProductCount }}
+                                        </span>
+                                        <Check
+                                            v-if="!selectedCategory"
+                                            class="size-3.5 text-primary"
+                                            aria-hidden="true"
+                                        />
+                                    </span>
+                                </DropdownMenuItem>
+
+                                <DropdownMenuItem
+                                    v-for="cat in props.categories"
+                                    :key="cat.id"
+                                    class="flex cursor-pointer items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-xs font-medium"
+                                    @select="emit('selectCategory', cat.slug)"
+                                >
+                                    <span
+                                        class="flex min-w-0 items-center gap-2.5"
+                                    >
+                                        <component
+                                            :is="resolveCategoryIcon(cat)"
+                                            :class="[
+                                                'size-4 shrink-0',
+                                                selectedCategory === cat.slug
+                                                    ? 'text-primary'
+                                                    : 'text-muted-foreground',
+                                            ]"
+                                            aria-hidden="true"
+                                        />
+                                        <span
+                                            :class="[
+                                                'truncate',
+                                                selectedCategory === cat.slug
+                                                    ? 'font-semibold text-foreground'
+                                                    : 'text-foreground',
+                                            ]"
+                                        >
+                                            {{ cat.name }}
+                                        </span>
+                                    </span>
+                                    <span
+                                        class="flex shrink-0 items-center gap-1.5"
+                                    >
+                                        <span
+                                            v-if="
+                                                typeof cat.productCount ===
+                                                'number'
+                                            "
+                                            class="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-muted-foreground"
+                                        >
+                                            {{ cat.productCount }}
+                                        </span>
+                                        <Check
+                                            v-if="selectedCategory === cat.slug"
+                                            class="size-3.5 text-primary"
+                                            aria-hidden="true"
+                                        />
+                                    </span>
+                                </DropdownMenuItem>
+
+                                <DropdownMenuSeparator />
+
+                                <DropdownMenuItem
+                                    as-child
+                                    class="cursor-pointer rounded-xl px-2.5 py-2 text-xs font-semibold text-primary"
+                                >
+                                    <Link
+                                        :href="productsIndex.url()"
+                                        class="flex w-full items-center justify-between"
+                                    >
+                                        <span>View Full Catalog</span>
+                                        <ArrowRight
+                                            class="size-3.5"
+                                            aria-hidden="true"
+                                        />
+                                    </Link>
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </template>
                 </div>
 
                 <!-- Center: Desktop Search Box -->
@@ -268,57 +501,5 @@ function handleMobileCategory(slug: string | null): void {
                 />
             </div>
         </div>
-
-        <!-- Optional Category Navigation Strip -->
-        <nav
-            v-if="categories.length > 0"
-            aria-label="Product categories"
-            class="hidden border-t border-border/70 bg-secondary/30 lg:block"
-        >
-            <div
-                class="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8"
-            >
-                <ul class="flex flex-wrap items-center gap-1 py-1.5">
-                    <li>
-                        <button
-                            type="button"
-                            :class="[
-                                'inline-flex min-h-9 items-center rounded-full px-3.5 text-xs font-semibold transition-colors',
-                                !selectedCategory
-                                    ? 'bg-primary text-primary-foreground'
-                                    : 'text-foreground hover:bg-secondary',
-                            ]"
-                            @click="emit('selectCategory', null)"
-                        >
-                            All Categories
-                        </button>
-                    </li>
-                    <li v-for="cat in categories" :key="cat.id">
-                        <button
-                            type="button"
-                            :class="[
-                                'inline-flex min-h-9 items-center rounded-full px-3.5 text-xs font-medium transition-colors',
-                                selectedCategory === cat.slug
-                                    ? 'bg-primary font-semibold text-primary-foreground'
-                                    : 'text-foreground hover:bg-secondary',
-                            ]"
-                            @click="emit('selectCategory', cat.slug)"
-                        >
-                            {{ cat.name }}
-                        </button>
-                    </li>
-                </ul>
-
-                <div
-                    class="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-                >
-                    <ShieldCheck
-                        class="size-3.5 text-primary"
-                        aria-hidden="true"
-                    />
-                    <span>Server-verified pricing &amp; stock</span>
-                </div>
-            </div>
-        </nav>
     </header>
 </template>

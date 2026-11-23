@@ -1,13 +1,17 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
     ArrowLeft,
     Check,
+    CheckCircle2,
     Heart,
+    MessageSquareText,
     ShieldCheck,
+    ShoppingBag,
     ShoppingCart,
+    Star,
 } from '@lucide/vue';
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import {
     CartPreviewDialog,
     useCartPreview,
@@ -25,10 +29,13 @@ import {
     type CategorySummary,
 } from '@modules/storefront';
 import Breadcrumbs from '@shared/components/Breadcrumbs.vue';
+import InputError from '@shared/components/InputError.vue';
 import { Badge } from '@shared/components/ui/badge';
 import { Button } from '@shared/components/ui/button';
+import { Input } from '@shared/components/ui/input';
+import { Label } from '@shared/components/ui/label';
 import type { BreadcrumbItem } from '@shared/types';
-import { home } from '@/routes';
+import { home, login } from '@/routes';
 import { store as storeCartItem } from '@/routes/cart/items';
 import { index as productsIndex, show as productShow } from '@/routes/products';
 import { toggle as toggleWishlistRoute } from '@/routes/wishlist';
@@ -136,6 +143,34 @@ function handleAddCurrentToCart(): void {
     }, 1800);
 }
 
+const isBuyingNow = ref(false);
+
+function handleBuyCurrentNow(): void {
+    if (
+        !props.product.inStock ||
+        isBuyingNow.value ||
+        typeof props.product.id !== 'number'
+    ) {
+        return;
+    }
+
+    isBuyingNow.value = true;
+
+    router.post(
+        storeCartItem.url(),
+        {
+            product_id: props.product.id,
+            quantity: quantity.value,
+            buy_now: true,
+        },
+        {
+            onFinish: () => {
+                isBuyingNow.value = false;
+            },
+        },
+    );
+}
+
 function handleAddRelatedToCart(item: ProductSummary): void {
     cartPreview.add({
         name: item.name,
@@ -161,6 +196,45 @@ function handleToggleWishlist(): void {
         { product_id: props.product.id },
         { preserveScroll: true, preserveState: true },
     );
+}
+
+const page = usePage();
+const isAuthenticated = computed(() => Boolean(page.props.auth?.user));
+const productReviews = computed(() => props.product.reviews ?? []);
+
+const reviewForm = useForm({
+    rating: props.product.userReview?.rating ?? 5,
+    title: props.product.userReview?.title ?? '',
+    comment: props.product.userReview?.comment ?? '',
+});
+
+watch(
+    () => props.product.userReview,
+    (nextReview) => {
+        if (nextReview) {
+            reviewForm.rating = nextReview.rating;
+            reviewForm.title = nextReview.title ?? '';
+            reviewForm.comment = nextReview.comment ?? '';
+        }
+    },
+);
+
+const starLabels: Record<number, string> = {
+    1: 'Poor',
+    2: 'Fair',
+    3: 'Good',
+    4: 'Very Good',
+    5: 'Excellent',
+};
+
+function handleSubmitReview(): void {
+    if (typeof props.product.id !== 'number') {
+        return;
+    }
+
+    reviewForm.post(`/products/${props.product.id}/reviews`, {
+        preserveScroll: true,
+    });
 }
 </script>
 
@@ -290,13 +364,13 @@ function handleToggleWishlist(): void {
                                 <Button
                                     type="button"
                                     size="lg"
-                                    class="h-11 flex-1 gap-2 text-sm font-semibold"
+                                    class="h-11 flex-1 gap-2 rounded-xl text-sm font-semibold"
                                     :variant="
                                         product.inStock
-                                            ? 'default'
+                                            ? 'outline'
                                             : 'secondary'
                                     "
-                                    :disabled="!product.inStock"
+                                    :disabled="!product.inStock || isBuyingNow"
                                     :aria-label="
                                         product.inStock
                                             ? `Add ${product.name} to cart`
@@ -321,6 +395,28 @@ function handleToggleWishlist(): void {
                                                 : justAdded
                                                   ? 'Added to Cart'
                                                   : 'Add to Cart'
+                                        }}
+                                    </span>
+                                </Button>
+
+                                <Button
+                                    v-if="product.inStock"
+                                    type="button"
+                                    size="lg"
+                                    class="h-11 flex-1 gap-2 rounded-xl text-sm font-semibold"
+                                    :disabled="isBuyingNow"
+                                    :aria-label="`Buy ${product.name} now`"
+                                    @click="handleBuyCurrentNow"
+                                >
+                                    <ShoppingBag
+                                        class="size-4"
+                                        aria-hidden="true"
+                                    />
+                                    <span>
+                                        {{
+                                            isBuyingNow
+                                                ? 'Redirecting...'
+                                                : 'Buy Now'
                                         }}
                                     </span>
                                 </Button>
@@ -390,6 +486,333 @@ function handleToggleWishlist(): void {
                     </div>
                 </div>
             </div>
+
+            <!-- Customer Ratings & Verified Feedback Section -->
+            <section
+                aria-labelledby="product-reviews-heading"
+                class="space-y-6 border-t border-border pt-10"
+            >
+                <div
+                    class="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"
+                >
+                    <div>
+                        <p
+                            class="text-xs font-semibold tracking-wider text-primary uppercase"
+                        >
+                            Verified Customer Feedback
+                        </p>
+                        <h2
+                            id="product-reviews-heading"
+                            class="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
+                        >
+                            Ratings &amp; Reviews
+                        </h2>
+                    </div>
+
+                    <p
+                        v-if="product.ratingCount"
+                        class="text-sm text-muted-foreground"
+                    >
+                        Based on
+                        <strong class="text-foreground">{{
+                            product.ratingCount
+                        }}</strong>
+                        verified customer
+                        {{ product.ratingCount === 1 ? 'review' : 'reviews' }}
+                    </p>
+                </div>
+
+                <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
+                    <!-- Left Column: Overall Score + Verified Buyer Form -->
+                    <div class="space-y-5 lg:col-span-5">
+                        <div
+                            class="rounded-2xl border border-border bg-card p-6 shadow-2xs"
+                        >
+                            <div class="flex items-center gap-4">
+                                <div
+                                    class="text-4xl font-extrabold text-foreground"
+                                >
+                                    {{
+                                        typeof product.ratingAverage ===
+                                        'number'
+                                            ? product.ratingAverage.toFixed(1)
+                                            : '—'
+                                    }}
+                                </div>
+                                <div class="space-y-1">
+                                    <div
+                                        class="flex items-center gap-1"
+                                        aria-hidden="true"
+                                    >
+                                        <Star
+                                            v-for="star in 5"
+                                            :key="star"
+                                            :class="[
+                                                'size-4',
+                                                typeof product.ratingAverage ===
+                                                    'number' &&
+                                                star <=
+                                                    Math.round(
+                                                        product.ratingAverage,
+                                                    )
+                                                    ? 'fill-amber-500 text-amber-500'
+                                                    : 'text-muted-foreground/30',
+                                            ]"
+                                        />
+                                    </div>
+                                    <p class="text-xs text-muted-foreground">
+                                        {{
+                                            product.ratingCount
+                                                ? `${product.ratingCount} verified ${product.ratingCount === 1 ? 'rating' : 'ratings'}`
+                                                : 'No verified ratings yet'
+                                        }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Review Submission Form (Only for Verified Purchasers) -->
+                        <div
+                            v-if="product.canReview"
+                            class="rounded-2xl border border-border bg-card p-6 shadow-2xs"
+                        >
+                            <div class="mb-4 space-y-1">
+                                <div
+                                    class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-500"
+                                >
+                                    <CheckCircle2
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Verified Purchaser</span>
+                                </div>
+                                <h3 class="text-base font-bold text-foreground">
+                                    {{
+                                        product.userReview
+                                            ? 'Update Your Rating & Feedback'
+                                            : 'Leave a Rating & Feedback'
+                                    }}
+                                </h3>
+                            </div>
+
+                            <form
+                                class="space-y-4"
+                                @submit.prevent="handleSubmitReview"
+                            >
+                                <div class="space-y-2">
+                                    <Label>Your Rating</Label>
+                                    <div class="flex items-center gap-2">
+                                        <div
+                                            class="flex items-center gap-1"
+                                            role="radiogroup"
+                                            aria-label="Select a star rating from 1 to 5"
+                                        >
+                                            <button
+                                                v-for="star in 5"
+                                                :key="star"
+                                                type="button"
+                                                class="inline-flex size-10 items-center justify-center rounded-xl border border-border/70 bg-secondary/30 transition-colors hover:border-amber-500/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                                                :aria-label="`Rate ${star} out of 5 stars`"
+                                                :aria-checked="
+                                                    reviewForm.rating === star
+                                                "
+                                                role="radio"
+                                                @click="
+                                                    reviewForm.rating = star
+                                                "
+                                            >
+                                                <Star
+                                                    :class="[
+                                                        'size-5 transition-transform',
+                                                        star <=
+                                                        reviewForm.rating
+                                                            ? 'scale-105 fill-amber-500 text-amber-500'
+                                                            : 'text-muted-foreground/40',
+                                                    ]"
+                                                    aria-hidden="true"
+                                                />
+                                            </button>
+                                        </div>
+                                        <span
+                                            class="text-xs font-semibold text-muted-foreground"
+                                        >
+                                            {{ reviewForm.rating }}/5 —
+                                            {{ starLabels[reviewForm.rating] }}
+                                        </span>
+                                    </div>
+                                    <InputError
+                                        :message="reviewForm.errors.rating"
+                                    />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <Label for="product-review-title">
+                                        Headline (Optional)
+                                    </Label>
+                                    <Input
+                                        id="product-review-title"
+                                        v-model="reviewForm.title"
+                                        maxlength="120"
+                                        placeholder="Summarize your experience"
+                                    />
+                                    <InputError
+                                        :message="reviewForm.errors.title"
+                                    />
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <Label for="product-review-comment">
+                                        Your Feedback (Optional)
+                                    </Label>
+                                    <textarea
+                                        id="product-review-comment"
+                                        v-model="reviewForm.comment"
+                                        rows="4"
+                                        maxlength="1500"
+                                        placeholder="Share your honest thoughts on quality, performance, and value..."
+                                        class="flex min-h-24 w-full rounded-xl border border-input bg-transparent px-3 py-2 text-sm shadow-2xs transition-colors placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                                    />
+                                    <InputError
+                                        :message="reviewForm.errors.comment"
+                                    />
+                                </div>
+
+                                <Button
+                                    type="submit"
+                                    class="h-10 w-full rounded-xl text-xs font-semibold"
+                                    :disabled="reviewForm.processing"
+                                >
+                                    {{
+                                        reviewForm.processing
+                                            ? 'Saving...'
+                                            : product.userReview
+                                              ? 'Update Verified Review'
+                                              : 'Submit Verified Review'
+                                    }}
+                                </Button>
+                            </form>
+                        </div>
+
+                        <div
+                            v-else
+                            class="rounded-2xl border border-border/80 bg-secondary/25 p-5 text-xs text-muted-foreground"
+                        >
+                            <p class="font-semibold text-foreground">
+                                Post-Delivery Review Policy
+                            </p>
+                            <p class="mt-1 leading-relaxed">
+                                Only customers who have received a
+                                <strong class="text-foreground"
+                                    >Delivered</strong
+                                >
+                                order for
+                                <strong class="text-foreground">{{
+                                    product.name
+                                }}</strong>
+                                can submit a rating and feedback, ensuring every
+                                score reflects a completed delivery.
+                            </p>
+                            <Link
+                                v-if="!isAuthenticated"
+                                :href="login.url()"
+                                class="mt-3 inline-flex font-semibold text-primary hover:underline"
+                            >
+                                Log in to check your delivery eligibility →
+                            </Link>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Verified Reviews List -->
+                    <div class="lg:col-span-7">
+                        <div v-if="productReviews.length > 0" class="space-y-4">
+                            <article
+                                v-for="review in productReviews"
+                                :key="review.id"
+                                class="space-y-2.5 rounded-2xl border border-border bg-card p-5 shadow-2xs"
+                            >
+                                <div
+                                    class="flex flex-wrap items-center justify-between gap-2"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <div
+                                            class="flex items-center gap-0.5"
+                                            :aria-label="`Rated ${review.rating} out of 5 stars`"
+                                        >
+                                            <Star
+                                                v-for="star in 5"
+                                                :key="star"
+                                                :class="[
+                                                    'size-4',
+                                                    star <= review.rating
+                                                        ? 'fill-amber-500 text-amber-500'
+                                                        : 'text-muted-foreground/30',
+                                                ]"
+                                                aria-hidden="true"
+                                            />
+                                        </div>
+                                        <span
+                                            v-if="review.title"
+                                            class="text-sm font-bold text-foreground"
+                                        >
+                                            {{ review.title }}
+                                        </span>
+                                    </div>
+
+                                    <span
+                                        v-if="review.isVerifiedPurchase"
+                                        class="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-500"
+                                    >
+                                        <CheckCircle2
+                                            class="size-3"
+                                            aria-hidden="true"
+                                        />
+                                        <span>Verified Purchase</span>
+                                    </span>
+                                </div>
+
+                                <p
+                                    v-if="review.comment"
+                                    class="text-sm leading-relaxed whitespace-pre-line text-foreground/90"
+                                >
+                                    {{ review.comment }}
+                                </p>
+
+                                <p class="text-xs text-muted-foreground">
+                                    By
+                                    <strong
+                                        class="font-medium text-foreground"
+                                        >{{ review.authorName }}</strong
+                                    >
+                                    · {{ review.createdAtFormatted }} ({{
+                                        review.createdAtDiff
+                                    }})
+                                </p>
+                            </article>
+                        </div>
+
+                        <div
+                            v-else
+                            class="flex min-h-48 flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-secondary/15 p-8 text-center"
+                        >
+                            <MessageSquareText
+                                class="size-8 text-muted-foreground/60"
+                                aria-hidden="true"
+                            />
+                            <p
+                                class="mt-3 text-sm font-semibold text-foreground"
+                            >
+                                No verified reviews yet
+                            </p>
+                            <p
+                                class="mt-1 max-w-sm text-xs text-muted-foreground"
+                            >
+                                Be the first verified customer to share your
+                                experience after purchasing this item.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </section>
 
             <!-- Related Products Section -->
             <section

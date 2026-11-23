@@ -19,6 +19,7 @@ class DatabaseBackupService
         'categories',
         'products',
         'product_images',
+        'product_reviews',
         'campaign_contents',
         'customer_addresses',
         'wishlist_items',

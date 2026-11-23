@@ -5,6 +5,7 @@ namespace App\Domain\Admin\Actions;
 use App\Domain\Admin\Services\AdminAuditRecorder;
 use App\Domain\Catalog\Enums\ProductStatus;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Catalog\Models\ProductImage;
 use App\Domain\Inventory\Enums\StockMovementType;
 use App\Domain\Inventory\Services\InventoryService;
 use App\Models\User;
@@ -99,6 +100,20 @@ final class SaveProductAction
                         'Initial stock on product creation.',
                     );
                 }
+            }
+
+            if (isset($attributes['image_path']) && is_string($attributes['image_path']) && trim($attributes['image_path']) !== '') {
+                ProductImage::query()->updateOrCreate(
+                    [
+                        'product_id' => $product->id,
+                        'is_primary' => true,
+                    ],
+                    [
+                        'path' => trim($attributes['image_path']),
+                        'alt_text' => $product->name,
+                        'sort_order' => 0,
+                    ],
+                );
             }
 
             $this->audit->record(

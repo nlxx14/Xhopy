@@ -11,6 +11,7 @@ use App\Http\Controllers\Storefront\DashboardController;
 use App\Http\Controllers\Storefront\HomeController;
 use App\Http\Controllers\Storefront\OrderController;
 use App\Http\Controllers\Storefront\ProductController;
+use App\Http\Controllers\Storefront\ProductReviewController;
 use App\Http\Controllers\Storefront\WishlistController;
 use App\Http\Controllers\System\HealthCheckController;
 use App\Http\Controllers\Webhooks\PayMongoWebhookController;
@@ -63,6 +64,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->where('orderNumber', '[A-Za-z0-9\-]+')
         ->name('orders.cancel');
 
+    Route::post('products/{product}/reviews', [ProductReviewController::class, 'store'])
+        ->middleware('throttle:20,1')
+        ->name('products.reviews.store');
+
     // Back-office routes (least-privilege: staff and admin)
     Route::prefix('admin')->name('admin.')->middleware('role:staff,admin')->group(function () {
         Route::get('/', AdminDashboardController::class)->name('dashboard');
@@ -83,6 +88,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::middleware(['role:admin', 'throttle:30,1'])->group(function () {
             Route::post('products/bulk-status', [AdminCatalogController::class, 'bulkUpdateStatus'])
                 ->name('products.bulk-status');
+            Route::post('products/bulk-delete', [AdminCatalogController::class, 'bulkDestroyProducts'])
+                ->name('products.bulk-destroy');
+            Route::delete('products/{product}', [AdminCatalogController::class, 'destroyProduct'])
+                ->name('products.destroy');
+            Route::delete('categories/{category}', [AdminCatalogController::class, 'destroyCategory'])
+                ->name('categories.destroy');
             Route::post('products/import', [AdminCatalogController::class, 'importCsv'])
                 ->name('products.import');
             Route::patch('customers/{customer}/role', [AdminCustomerController::class, 'updateRole'])

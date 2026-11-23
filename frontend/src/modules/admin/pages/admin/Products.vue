@@ -1,10 +1,14 @@
 <script setup lang="ts">
 import { Head, router, useForm } from '@inertiajs/vue3';
 import {
+    AlertTriangle,
     FolderPlus,
+    ImagePlus,
+    Package,
     PackagePlus,
     Pencil,
     RefreshCw,
+    Trash2,
     Upload,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
@@ -67,6 +71,84 @@ const stockDialogOpen = ref(false);
 const stockTargetProduct = ref<AdminProductRow | null>(null);
 const importDialogOpen = ref(false);
 
+const deleteDialogOpen = ref(false);
+const deletingSingleProduct = ref<AdminProductRow | null>(null);
+const isDeleting = ref(false);
+
+const allProductsSelected = computed(
+    () =>
+        props.products.length > 0 &&
+        selectedIds.value.length === props.products.length,
+);
+
+function toggleSelectAll(checked: boolean): void {
+    if (checked) {
+        selectedIds.value = props.products.map((product) => product.id);
+    } else {
+        selectedIds.value = [];
+    }
+}
+
+function openSingleDeleteDialog(product: AdminProductRow): void {
+    deletingSingleProduct.value = product;
+    deleteDialogOpen.value = true;
+}
+
+function openBulkDeleteDialog(): void {
+    if (selectedIds.value.length === 0) {
+        return;
+    }
+    deletingSingleProduct.value = null;
+    deleteDialogOpen.value = true;
+}
+
+function confirmDeleteProducts(): void {
+    if (isDeleting.value) {
+        return;
+    }
+
+    isDeleting.value = true;
+
+    if (deletingSingleProduct.value) {
+        const targetId = deletingSingleProduct.value.id;
+        router.delete(`/admin/products/${targetId}`, {
+            preserveScroll: true,
+            onSuccess: () => {
+                selectedIds.value = selectedIds.value.filter(
+                    (id) => id !== targetId,
+                );
+                deleteDialogOpen.value = false;
+                deletingSingleProduct.value = null;
+            },
+            onFinish: () => {
+                isDeleting.value = false;
+            },
+        });
+        return;
+    }
+
+    router.post(
+        '/admin/products/bulk-delete',
+        { product_ids: selectedIds.value },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                selectedIds.value = [];
+                deleteDialogOpen.value = false;
+            },
+            onFinish: () => {
+                isDeleting.value = false;
+            },
+        },
+    );
+}
+
+function handleDeleteCategory(category: AdminCategoryRow): void {
+    router.delete(`/admin/categories/${category.id}`, {
+        preserveScroll: true,
+    });
+}
+
 const categoryOptions = computed<CustomDropdownOption[]>(() =>
     props.categories.map((cat) => ({
         value: String(cat.id),
@@ -81,6 +163,7 @@ const statusOptions: CustomDropdownOption[] = [
 ];
 
 const productForm = useForm({
+    _method: 'post',
     category_id: props.categories[0]?.id ? String(props.categories[0].id) : '',
     name: '',
     sku: '',
@@ -91,7 +174,23 @@ const productForm = useForm({
     stock_quantity: 0,
     status: 'active',
     is_featured: false,
+    image_url: '',
 });
+
+const selectedImageFile = ref<File | null>(null);
+const imagePreviewUrl = ref<string | null>(null);
+
+function handleProductImageSelect(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0] ?? null;
+    selectedImageFile.value = file;
+
+    if (file) {
+        imagePreviewUrl.value = URL.createObjectURL(file);
+    } else {
+        imagePreviewUrl.value = editingProduct.value?.imageUrl ?? null;
+    }
+}
 
 const categoryForm = useForm({
     name: '',
@@ -126,16 +225,21 @@ function openCreateProduct(): void {
     editingProduct.value = null;
     productForm.reset();
     productForm.clearErrors();
+    productForm._method = 'post';
     productForm.category_id = props.categories[0]?.id
         ? String(props.categories[0].id)
         : '';
     productForm.status = 'active';
+    productForm.image_url = '';
+    selectedImageFile.value = null;
+    imagePreviewUrl.value = null;
     productDialogOpen.value = true;
 }
 
 function openEditProduct(product: AdminProductRow): void {
     editingProduct.value = product;
     productForm.clearErrors();
+    productForm._method = 'put';
     productForm.category_id = String(product.categoryId);
     productForm.name = product.name;
     productForm.sku = product.sku;
@@ -146,25 +250,45 @@ function openEditProduct(product: AdminProductRow): void {
     productForm.stock_quantity = product.stockQuantity;
     productForm.status = product.status;
     productForm.is_featured = product.isFeatured;
+    productForm.image_url =
+        product.imageUrl && product.imageUrl.startsWith('https://')
+            ? product.imageUrl
+            : '';
+    selectedImageFile.value = null;
+    imagePreviewUrl.value = product.imageUrl ?? null;
     productDialogOpen.value = true;
 }
 
 function submitProduct(): void {
     const target = editingProduct.value;
     if (target) {
-        productForm.put(updateProductRoute.url(target.id), {
-            preserveScroll: true,
-            onSuccess: () => {
-                productDialogOpen.value = false;
-            },
-        });
+        productForm._method = 'put';
+        productForm
+            .transform((data) => ({
+                ...data,
+                image: selectedImageFile.value,
+            }))
+            .post(updateProductRoute.url(target.id), {
+                forceFormData: true,
+                preserveScroll: true,
+                onSuccess: () => {
+                    productDialogOpen.value = false;
+                },
+            });
     } else {
-        productForm.post(storeProductRoute.url(), {
-            preserveScroll: true,
-            onSuccess: () => {
-                productDialogOpen.value = false;
-            },
-        });
+        productForm._method = 'post';
+        productForm
+            .transform((data) => ({
+                ...data,
+                image: selectedImageFile.value,
+            }))
+            .post(storeProductRoute.url(), {
+                forceFormData: true,
+                preserveScroll: true,
+                onSuccess: () => {
+                    productDialogOpen.value = false;
+                },
+            });
     }
 }
 
@@ -290,7 +414,39 @@ function submitCsvImport(): void {
             </div>
         </div>
 
-        <!-- Admin-Only Safe Bulk Status Bar -->
+        <!-- Departments / Categories Strip -->
+        <div
+            v-if="categories.length > 0"
+            class="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-4 py-3 shadow-2xs"
+        >
+            <span
+                class="mr-1 text-xs font-semibold tracking-wider text-muted-foreground uppercase"
+            >
+                Categories ({{ categories.length }}):
+            </span>
+            <div
+                v-for="cat in categories"
+                :key="cat.id"
+                class="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-secondary/40 px-3 py-1 text-xs"
+            >
+                <span class="font-medium text-foreground">{{ cat.name }}</span>
+                <span class="text-muted-foreground"
+                    >({{ cat.productCount }})</span
+                >
+                <button
+                    v-if="canRunAdminOnlyActions && cat.productCount === 0"
+                    type="button"
+                    class="ml-0.5 inline-flex size-5 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+                    :title="`Delete empty category ${cat.name}`"
+                    :aria-label="`Delete category ${cat.name}`"
+                    @click="handleDeleteCategory(cat)"
+                >
+                    <Trash2 class="size-3" aria-hidden="true" />
+                </button>
+            </div>
+        </div>
+
+        <!-- Admin-Only Safe Bulk Status & Delete Bar -->
         <div
             v-if="canRunAdminOnlyActions && selectedIds.length > 0"
             class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/40 bg-brand-subtle/40 px-4 py-3"
@@ -315,6 +471,16 @@ function submitCsvImport(): void {
                 >
                     Apply Bulk Status
                 </Button>
+                <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    class="h-9 gap-1.5 rounded-xl border-destructive/40 text-xs font-semibold text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    @click="openBulkDeleteDialog"
+                >
+                    <Trash2 class="size-3.5" aria-hidden="true" />
+                    <span>Delete Selected ({{ selectedIds.length }})</span>
+                </Button>
             </div>
         </div>
 
@@ -329,9 +495,15 @@ function submitCsvImport(): void {
                     <tr>
                         <th
                             v-if="canRunAdminOnlyActions"
-                            class="w-10 px-4 py-3"
+                            class="w-10 px-4 py-3 align-middle"
                         >
-                            <span class="sr-only">Select</span>
+                            <Checkbox
+                                :model-value="allProductsSelected"
+                                aria-label="Select all products"
+                                @update:model-value="
+                                    toggleSelectAll($event === true)
+                                "
+                            />
                         </th>
                         <th class="px-4 py-3">Product</th>
                         <th class="px-4 py-3">Category</th>
@@ -360,12 +532,31 @@ function submitCsvImport(): void {
                             />
                         </td>
                         <td class="px-4 py-3">
-                            <p class="font-semibold text-foreground">
-                                {{ product.name }}
-                            </p>
-                            <p class="text-xs text-muted-foreground">
-                                SKU: {{ product.sku }}
-                            </p>
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-secondary/40"
+                                >
+                                    <img
+                                        v-if="product.imageUrl"
+                                        :src="product.imageUrl"
+                                        :alt="product.name"
+                                        class="size-full object-cover"
+                                    />
+                                    <Package
+                                        v-else
+                                        class="size-4 text-muted-foreground"
+                                        aria-hidden="true"
+                                    />
+                                </div>
+                                <div>
+                                    <p class="font-semibold text-foreground">
+                                        {{ product.name }}
+                                    </p>
+                                    <p class="text-xs text-muted-foreground">
+                                        SKU: {{ product.sku }}
+                                    </p>
+                                </div>
+                            </div>
                         </td>
                         <td class="px-4 py-3 text-xs text-muted-foreground">
                             {{ product.categoryName }}
@@ -431,6 +622,21 @@ function submitCsvImport(): void {
                                         aria-hidden="true"
                                     />
                                     <span>Edit</span>
+                                </Button>
+                                <Button
+                                    v-if="canRunAdminOnlyActions"
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    class="h-8 gap-1 rounded-lg text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    :aria-label="`Delete ${product.name}`"
+                                    @click="openSingleDeleteDialog(product)"
+                                >
+                                    <Trash2
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Delete</span>
                                 </Button>
                             </div>
                         </td>
@@ -553,11 +759,100 @@ function submitCsvImport(): void {
                         <Input
                             id="prod_short"
                             v-model="productForm.short_description"
+                            placeholder="Brief one-line product summary"
                         />
                         <InputError
                             :message="productForm.errors.short_description"
                         />
                     </div>
+
+                    <div class="grid gap-1.5">
+                        <Label for="prod_description">
+                            Full Description (optional)
+                        </Label>
+                        <Input
+                            id="prod_description"
+                            v-model="productForm.description"
+                            placeholder="Detailed specifications, materials, and features..."
+                        />
+                        <InputError :message="productForm.errors.description" />
+                    </div>
+
+                    <!-- Product Photo Upload & Preview -->
+                    <div
+                        class="space-y-3 rounded-xl border border-border/80 bg-secondary/20 p-3.5"
+                    >
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="space-y-0.5">
+                                <Label
+                                    for="prod_image"
+                                    class="flex items-center gap-1.5 text-xs font-semibold"
+                                >
+                                    <ImagePlus
+                                        class="size-3.5 text-primary"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Product Photo</span>
+                                </Label>
+                                <p class="text-[11px] text-muted-foreground">
+                                    Upload a JPG, PNG, or WebP photo (max 5 MB)
+                                </p>
+                            </div>
+
+                            <div
+                                v-if="imagePreviewUrl"
+                                class="size-12 shrink-0 overflow-hidden rounded-lg border border-border bg-background"
+                            >
+                                <img
+                                    :src="imagePreviewUrl"
+                                    alt="Product preview"
+                                    class="size-full object-cover"
+                                />
+                            </div>
+                        </div>
+
+                        <input
+                            id="prod_image"
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            class="block w-full cursor-pointer text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground hover:file:bg-primary/90"
+                            @change="handleProductImageSelect"
+                        />
+
+                        <div class="grid gap-1">
+                            <Label
+                                for="prod_image_url"
+                                class="text-[11px] text-muted-foreground"
+                            >
+                                Or paste an HTTPS image URL (optional)
+                            </Label>
+                            <Input
+                                id="prod_image_url"
+                                v-model="productForm.image_url"
+                                type="url"
+                                placeholder="Paste secure image URL (optional)"
+                                class="h-8 text-xs"
+                            />
+                            <InputError
+                                :message="productForm.errors.image_url"
+                            />
+                        </div>
+                    </div>
+
+                    <label
+                        class="flex cursor-pointer items-center gap-2.5 text-xs font-medium text-foreground"
+                    >
+                        <Checkbox
+                            :model-value="productForm.is_featured"
+                            @update:model-value="
+                                productForm.is_featured = $event === true
+                            "
+                        />
+                        <span>
+                            Feature this product in Top Products on the front
+                            page
+                        </span>
+                    </label>
 
                     <DialogFooter class="gap-2">
                         <Button
@@ -768,6 +1063,86 @@ function submitCsvImport(): void {
                         </Button>
                     </DialogFooter>
                 </form>
+            </DialogContent>
+        </Dialog>
+
+        <!-- Confirm Product Deletion Dialog (Admin Only) -->
+        <Dialog v-model:open="deleteDialogOpen">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle
+                        class="flex items-center gap-2 text-destructive"
+                    >
+                        <AlertTriangle class="size-5" aria-hidden="true" />
+                        <span>
+                            {{
+                                deletingSingleProduct
+                                    ? 'Delete Product'
+                                    : `Delete ${selectedIds.length} Selected Products`
+                            }}
+                        </span>
+                    </DialogTitle>
+                    <DialogDescription>
+                        <template v-if="deletingSingleProduct">
+                            Are you sure you want to permanently delete
+                            <strong class="text-foreground">{{
+                                deletingSingleProduct.name
+                            }}</strong>
+                            (<code class="text-xs">{{
+                                deletingSingleProduct.sku
+                            }}</code
+                            >)?
+                        </template>
+                        <template v-else>
+                            Are you sure you want to permanently delete
+                            <strong class="text-foreground"
+                                >{{ selectedIds.length }} selected
+                                product(s)</strong
+                            >?
+                        </template>
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div
+                    class="rounded-xl border border-border bg-secondary/30 p-3.5 text-xs text-muted-foreground"
+                >
+                    <p>
+                        Historical customer order receipts remain preserved via
+                        order item snapshots. Products attached to active
+                        unfulfilled orders are protected from deletion until the
+                        order is completed or cancelled.
+                    </p>
+                </div>
+
+                <DialogFooter class="gap-2">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        class="h-10 rounded-xl text-xs"
+                        :disabled="isDeleting"
+                        @click="deleteDialogOpen = false"
+                    >
+                        Cancel
+                    </Button>
+                    <Button
+                        type="button"
+                        variant="destructive"
+                        class="h-10 gap-1.5 rounded-xl text-xs font-semibold"
+                        :disabled="isDeleting"
+                        @click="confirmDeleteProducts"
+                    >
+                        <Trash2 class="size-3.5" aria-hidden="true" />
+                        <span>
+                            {{
+                                isDeleting
+                                    ? 'Deleting...'
+                                    : deletingSingleProduct
+                                      ? 'Yes, Delete Product'
+                                      : `Yes, Delete ${selectedIds.length} Products`
+                            }}
+                        </span>
+                    </Button>
+                </DialogFooter>
             </DialogContent>
         </Dialog>
     </div>

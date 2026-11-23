@@ -2,11 +2,13 @@
 
 namespace App\Domain\Orders\Support;
 
+use App\Domain\Catalog\Models\ProductReview;
 use App\Domain\Catalog\Support\Money;
 use App\Domain\Orders\Enums\OrderStatus;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Models\OrderItem;
 use App\Domain\Orders\Models\OrderStatusHistory;
+use Illuminate\Support\Collection;
 
 final class OrderPresenter
 {
@@ -33,11 +35,13 @@ final class OrderPresenter
     }
 
     /**
+     * @param  Collection<int, ProductReview>|null  $reviewsByProductId
      * @return array<string, mixed>
      */
-    public function detail(Order $order): array
+    public function detail(Order $order, ?Collection $reviewsByProductId = null): array
     {
         $latestPayment = $order->latestPayment;
+        $orderCanBeReviewed = $order->status === OrderStatus::Delivered;
 
         return [
             ...$this->summary($order),
@@ -64,16 +68,30 @@ final class OrderPresenter
                 ])),
             ],
             'items' => array_values(
-                $order->items->map(fn (OrderItem $item): array => [
-                    'id' => $item->id,
-                    'productId' => $item->product_id,
-                    'productName' => $item->product_name,
-                    'productSlug' => $item->product_slug,
-                    'sku' => $item->sku,
-                    'quantity' => $item->quantity,
-                    'unitPriceFormatted' => Money::format($item->unit_price, $item->currency),
-                    'lineTotalFormatted' => Money::format($item->line_total, $item->currency),
-                ])->all(),
+                $order->items->map(function (OrderItem $item) use ($orderCanBeReviewed, $reviewsByProductId): array {
+                    $existingReview = $item->product_id !== null && $reviewsByProductId !== null
+                        ? $reviewsByProductId->get($item->product_id)
+                        : null;
+
+                    return [
+                        'id' => $item->id,
+                        'productId' => $item->product_id,
+                        'productName' => $item->product_name,
+                        'productSlug' => $item->product_slug,
+                        'sku' => $item->sku,
+                        'quantity' => $item->quantity,
+                        'unitPriceFormatted' => Money::format($item->unit_price, $item->currency),
+                        'lineTotalFormatted' => Money::format($item->line_total, $item->currency),
+                        'canReview' => $orderCanBeReviewed && $item->product_id !== null,
+                        'review' => $existingReview === null ? null : [
+                            'id' => $existingReview->id,
+                            'rating' => $existingReview->rating,
+                            'title' => $existingReview->title,
+                            'comment' => $existingReview->comment,
+                            'updatedAtDiff' => $existingReview->updated_at?->diffForHumans() ?? 'Recently',
+                        ],
+                    ];
+                })->all(),
             ),
             'timeline' => array_values(
                 $order->statusHistories->map(fn (OrderStatusHistory $entry): array => [

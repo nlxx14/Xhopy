@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Domain\Admin\Actions\BulkUpdateProductStatusAction;
+use App\Domain\Admin\Actions\DeleteCategoryAction;
+use App\Domain\Admin\Actions\DeleteProductsAction;
 use App\Domain\Admin\Actions\ImportProductsAction;
 use App\Domain\Admin\Actions\SaveCategoryAction;
 use App\Domain\Admin\Actions\SaveProductAction;
@@ -11,6 +13,7 @@ use App\Domain\Catalog\Enums\ProductStatus;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Support\Money;
+use App\Domain\Catalog\Support\ProductPresenter;
 use App\Domain\Inventory\Enums\StockMovementType;
 use App\Domain\Inventory\Services\InventoryService;
 use App\Http\Controllers\Controller;
@@ -22,16 +25,16 @@ use Inertia\Response;
 
 class AdminCatalogController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, ProductPresenter $presenter): Response
     {
         $products = array_values(
             Product::query()
-                ->with('category:id,name,slug')
+                ->with(['category:id,name,slug', 'primaryImage'])
                 ->withSum('stockMovements as ledger_stock_sum', 'quantity_delta')
                 ->orderByDesc('updated_at')
                 ->orderByDesc('id')
                 ->get()
-                ->map(function (Product $product): array {
+                ->map(function (Product $product) use ($presenter): array {
                     $ledgerSum = (int) ($product->getAttribute('ledger_stock_sum') ?? 0);
 
                     return [
@@ -53,6 +56,7 @@ class AdminCatalogController extends Controller
                         'status' => $product->status->value,
                         'isFeatured' => $product->is_featured,
                         'featuredRank' => $product->featured_rank,
+                        'imageUrl' => $presenter->imageUrl($product->primaryImage?->path),
                     ];
                 })
                 ->all(),
@@ -88,6 +92,7 @@ class AdminCatalogController extends Controller
         SaveProductAction $saveProduct,
     ): RedirectResponse {
         $validated = $request->validate($this->productRules());
+        $validated['image_path'] = $this->resolveUploadedImagePath($request, $validated);
 
         $saveProduct->execute($request->user(), $validated);
 
@@ -102,6 +107,7 @@ class AdminCatalogController extends Controller
         SaveProductAction $saveProduct,
     ): RedirectResponse {
         $validated = $request->validate($this->productRules($product->id));
+        $validated['image_path'] = $this->resolveUploadedImagePath($request, $validated);
 
         $saveProduct->execute($request->user(), $validated, $product);
 
@@ -249,6 +255,58 @@ class AdminCatalogController extends Controller
         return to_route('admin.products.index');
     }
 
+    public function destroyProduct(
+        Request $request,
+        Product $product,
+        DeleteProductsAction $deleteProducts,
+    ): RedirectResponse {
+        $deleteProducts->execute($request->user(), [$product->id]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Product deleted.'),
+        ]);
+
+        return to_route('admin.products.index');
+    }
+
+    public function bulkDestroyProducts(
+        Request $request,
+        DeleteProductsAction $deleteProducts,
+    ): RedirectResponse {
+        $validated = $request->validate([
+            'product_ids' => ['required', 'array', 'min:1', 'max:'.DeleteProductsAction::MAX_BATCH_SIZE],
+            'product_ids.*' => ['required', 'integer', 'exists:products,id'],
+        ]);
+
+        /** @var list<int> $productIds */
+        $productIds = array_values(array_map('intval', $validated['product_ids']));
+
+        $count = $deleteProducts->execute($request->user(), $productIds);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Deleted :count product(s).', ['count' => $count]),
+        ]);
+
+        return to_route('admin.products.index');
+    }
+
+    public function destroyCategory(
+        Request $request,
+        Category $category,
+        DeleteCategoryAction $deleteCategory,
+    ): RedirectResponse {
+        $deleteCategory->execute($request->user(), $category);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Category deleted.'),
+        ]);
+
+        return to_route('admin.products.index');
+    }
+
     /**
      * @return array<string, array<int, mixed>>
      */
@@ -283,6 +341,29 @@ class AdminCatalogController extends Controller
             'status' => ['required', Rule::enum(ProductStatus::class)],
             'is_featured' => ['nullable', 'boolean'],
             'featured_rank' => ['nullable', 'integer', 'min:1', 'max:999'],
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'image_url' => ['nullable', 'url:https', 'max:500'],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $validated
+     */
+    private function resolveUploadedImagePath(Request $request, array $validated): ?string
+    {
+        if ($request->hasFile('image')) {
+            $file = $request->file('image');
+            if ($file !== null && $file->isValid()) {
+                $stored = $file->store('products', 'public');
+
+                return is_string($stored) ? $stored : null;
+            }
+        }
+
+        if (isset($validated['image_url']) && is_string($validated['image_url']) && trim($validated['image_url']) !== '') {
+            return trim($validated['image_url']);
+        }
+
+        return null;
     }
 }

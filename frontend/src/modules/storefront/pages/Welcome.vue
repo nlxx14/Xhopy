@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ArrowRight, Eye, Layers, ShoppingBag, Sparkles } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import {
+    ArrowRight,
+    ArrowUpRight,
+    Eye,
+    Layers,
+    ShoppingBag,
+    Sparkles,
+} from '@lucide/vue';
+import { computed, ref, watch } from 'vue';
 import CategoryCard from '@modules/storefront/components/CategoryCard.vue';
 import DailyInterestModule from '@modules/storefront/components/DailyInterestModule.vue';
 import EmptyState from '@shared/components/EmptyState.vue';
@@ -25,9 +32,13 @@ import StorefrontLayout from '@modules/storefront/layouts/StorefrontLayout.vue';
 import { home } from '@/routes';
 import { index as cartIndex } from '@/routes/cart';
 import { store as storeCartItem } from '@/routes/cart/items';
-import { index as productsIndex } from '@/routes/products';
+import { index as checkoutIndex } from '@/routes/checkout';
+import { index as productsIndex, show as showProduct } from '@/routes/products';
 import type { CartSummary } from '@modules/cart';
-import type { StorefrontHomeProps } from '@modules/storefront/types';
+import type {
+    CategorySummary,
+    StorefrontHomeProps,
+} from '@modules/storefront/types';
 
 const props = withDefaults(defineProps<StorefrontHomeProps>(), {
     announcement: null,
@@ -45,6 +56,13 @@ const localCartCount = ref(props.cartSummary.itemCount);
 const cartDialogOpen = ref(false);
 const lastSelectedProduct = ref<ProductSummary | null>(null);
 
+watch(
+    () => props.cartSummary.itemCount,
+    (nextCount) => {
+        localCartCount.value = nextCount;
+    },
+);
+
 const effectiveCart = computed<CartSummary>(() => ({
     itemCount: localCartCount.value,
     subtotalFormatted: props.cartSummary.subtotalFormatted,
@@ -52,6 +70,35 @@ const effectiveCart = computed<CartSummary>(() => ({
 
 const filteredProducts = computed(() => {
     return props.topProducts;
+});
+
+const allCategoriesCard = computed<CategorySummary>(() => {
+    const counts = props.categories
+        .map((cat) => cat.productCount)
+        .filter((count): count is number => typeof count === 'number');
+
+    return {
+        id: 'all-categories',
+        name: 'All Categories',
+        slug: '',
+        description: 'Browse all published departments and products.',
+        productCount:
+            counts.length > 0
+                ? counts.reduce((sum, count) => sum + count, 0)
+                : undefined,
+    };
+});
+
+const spotlightProduct = computed<ProductSummary | null>(() => {
+    if (props.topProducts.length === 0) {
+        return null;
+    }
+
+    return (
+        props.topProducts.find((product) => product.inStock) ??
+        props.topProducts[0] ??
+        null
+    );
 });
 
 function handleSearch(query: string): void {
@@ -120,7 +167,7 @@ function clearFilters(): void {
         @open-cart="cartDialogOpen = true"
     >
         <div
-            class="mx-auto max-w-7xl space-y-14 px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
+            class="mx-auto max-w-7xl space-y-12 px-4 py-8 sm:px-6 sm:py-10 lg:px-8"
         >
             <!-- Explicit Non-Production Demo Preview Indicator (Rule #4: No fabricated facts) -->
             <Alert
@@ -151,70 +198,188 @@ function clearFilters(): void {
                 </AlertDescription>
             </Alert>
 
-            <!-- 1. Promotional Hero Section -->
+            <!-- 1. Minimal 2-Column Split Hero Section -->
             <section
                 v-if="hero"
                 aria-labelledby="hero-heading"
-                class="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-charcoal via-charcoal to-primary/90 p-6 text-charcoal-foreground shadow-sm sm:p-10 lg:p-14"
+                class="relative overflow-hidden rounded-3xl border border-border bg-gradient-to-br from-charcoal via-charcoal to-primary/85 p-6 text-charcoal-foreground shadow-xs sm:p-10 lg:p-12"
             >
-                <div class="relative z-10 max-w-2xl space-y-5">
-                    <div class="flex flex-wrap items-center gap-2">
-                        <Badge
-                            v-if="hero.badgeText"
-                            class="bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+                <div
+                    class="relative z-10 grid grid-cols-1 items-center gap-8 lg:grid-cols-12"
+                >
+                    <div
+                        :class="[
+                            'space-y-5',
+                            spotlightProduct
+                                ? 'lg:col-span-7'
+                                : 'max-w-2xl lg:col-span-12',
+                        ]"
+                    >
+                        <div class="flex flex-wrap items-center gap-2.5">
+                            <Badge
+                                v-if="hero.badgeText"
+                                class="bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+                            >
+                                {{ hero.badgeText }}
+                            </Badge>
+                            <span
+                                v-if="hero.eyebrow"
+                                class="text-xs font-medium tracking-wider text-charcoal-foreground/75 uppercase"
+                            >
+                                {{ hero.eyebrow }}
+                            </span>
+                        </div>
+
+                        <h1
+                            id="hero-heading"
+                            class="text-3xl leading-tight font-extrabold tracking-tight sm:text-4xl lg:text-[2.75rem]"
                         >
-                            {{ hero.badgeText }}
-                        </Badge>
-                        <span
-                            v-if="hero.eyebrow"
-                            class="text-xs font-semibold tracking-wider text-charcoal-foreground/80 uppercase"
+                            {{ hero.title }}
+                        </h1>
+
+                        <p
+                            class="max-w-xl text-sm leading-relaxed text-charcoal-foreground/80 sm:text-base"
                         >
-                            {{ hero.eyebrow }}
-                        </span>
+                            {{ hero.subtitle }}
+                        </p>
+
+                        <div class="flex flex-wrap items-center gap-3 pt-1">
+                            <Button
+                                as="a"
+                                :href="hero.primaryCtaHref"
+                                size="lg"
+                                class="h-11 gap-2 rounded-full px-6 text-sm font-semibold shadow-2xs"
+                            >
+                                <span>{{ hero.primaryCtaLabel }}</span>
+                                <ArrowRight class="size-4" aria-hidden="true" />
+                            </Button>
+
+                            <Button
+                                v-if="
+                                    hero.secondaryCtaLabel &&
+                                    hero.secondaryCtaHref
+                                "
+                                as="a"
+                                :href="hero.secondaryCtaHref"
+                                variant="outline"
+                                size="lg"
+                                class="h-11 rounded-full border-white/20 bg-white/5 px-6 text-sm font-semibold text-white hover:bg-white/15 hover:text-white"
+                            >
+                                {{ hero.secondaryCtaLabel }}
+                            </Button>
+                        </div>
                     </div>
 
-                    <h1
-                        id="hero-heading"
-                        class="text-3xl leading-tight font-extrabold tracking-tight sm:text-4xl lg:text-5xl"
-                    >
-                        {{ hero.title }}
-                    </h1>
-
-                    <p
-                        class="max-w-xl text-sm leading-relaxed text-charcoal-foreground/85 sm:text-base"
-                    >
-                        {{ hero.subtitle }}
-                    </p>
-
-                    <div class="flex flex-wrap items-center gap-3 pt-2">
-                        <Button
-                            as="a"
-                            :href="hero.primaryCtaHref"
-                            size="lg"
-                            class="h-12 gap-2 rounded-full px-6 text-sm font-semibold shadow-sm"
+                    <!-- Right Column: Minimal Featured Spotlight Card (only rendered when real/demo products exist) -->
+                    <div v-if="spotlightProduct" class="lg:col-span-5">
+                        <div
+                            class="flex flex-col justify-between rounded-2xl border border-white/15 bg-white/[0.06] p-5 backdrop-blur-xs sm:p-6"
                         >
-                            <span>{{ hero.primaryCtaLabel }}</span>
-                            <ArrowRight class="size-4" aria-hidden="true" />
-                        </Button>
+                            <div
+                                class="flex items-center justify-between gap-2"
+                            >
+                                <span
+                                    class="inline-flex items-center gap-1.5 text-[11px] font-semibold tracking-wider text-white/80 uppercase"
+                                >
+                                    <Sparkles
+                                        class="size-3.5 text-primary"
+                                        aria-hidden="true"
+                                    />
+                                    <span>Featured Spotlight</span>
+                                </span>
+                                <span
+                                    class="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-0.5 text-[11px] font-medium text-white/90"
+                                >
+                                    <span
+                                        :class="[
+                                            'size-1.5 rounded-full',
+                                            spotlightProduct.inStock
+                                                ? 'bg-emerald-400'
+                                                : 'bg-white/40',
+                                        ]"
+                                    />
+                                    {{ spotlightProduct.stockLabel }}
+                                </span>
+                            </div>
 
-                        <Button
-                            v-if="
-                                hero.secondaryCtaLabel && hero.secondaryCtaHref
-                            "
-                            as="a"
-                            :href="hero.secondaryCtaHref"
-                            variant="outline"
-                            size="lg"
-                            class="h-12 rounded-full border-white/25 bg-white/10 px-6 text-sm font-semibold text-white hover:bg-white/20 hover:text-white"
-                        >
-                            {{ hero.secondaryCtaLabel }}
-                        </Button>
+                            <div class="mt-5 space-y-1.5">
+                                <p
+                                    v-if="spotlightProduct.categoryName"
+                                    class="text-xs font-medium text-white/65"
+                                >
+                                    {{ spotlightProduct.categoryName }}
+                                </p>
+                                <p
+                                    class="line-clamp-2 text-lg leading-snug font-bold tracking-tight text-white sm:text-xl"
+                                >
+                                    {{ spotlightProduct.name }}
+                                </p>
+                            </div>
+
+                            <div
+                                class="mt-6 flex flex-wrap items-end justify-between gap-3 border-t border-white/10 pt-4"
+                            >
+                                <div>
+                                    <p
+                                        class="text-[11px] tracking-wider text-white/60 uppercase"
+                                    >
+                                        Verified Price
+                                    </p>
+                                    <div
+                                        class="mt-0.5 flex items-baseline gap-2"
+                                    >
+                                        <span
+                                            class="text-xl font-extrabold tracking-tight text-white"
+                                        >
+                                            {{
+                                                spotlightProduct.priceFormatted
+                                            }}
+                                        </span>
+                                        <span
+                                            v-if="
+                                                spotlightProduct.originalPriceFormatted
+                                            "
+                                            class="text-xs text-white/50 line-through"
+                                        >
+                                            {{
+                                                spotlightProduct.originalPriceFormatted
+                                            }}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <Link
+                                    v-if="!isDemoPreview"
+                                    :href="
+                                        showProduct.url(spotlightProduct.slug)
+                                    "
+                                    class="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-semibold text-charcoal transition-opacity hover:opacity-90"
+                                >
+                                    <span>View Item</span>
+                                    <ArrowUpRight
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />
+                                </Link>
+                                <a
+                                    v-else
+                                    href="#top-products-heading"
+                                    class="inline-flex h-9 items-center gap-1.5 rounded-full bg-white px-4 text-xs font-semibold text-charcoal transition-opacity hover:opacity-90"
+                                >
+                                    <span>View in Catalog</span>
+                                    <ArrowRight
+                                        class="size-3.5"
+                                        aria-hidden="true"
+                                    />
+                                </a>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
 
             <!-- 2. Categories Section -->
-            <section aria-labelledby="categories-heading" class="space-y-5">
+            <section aria-labelledby="categories-heading" class="space-y-4">
                 <div
                     class="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"
                 >
@@ -222,11 +387,11 @@ function clearFilters(): void {
                         <p
                             class="text-xs font-semibold tracking-wider text-primary uppercase"
                         >
-                            Browse by Department
+                            Departments
                         </p>
                         <h2
                             id="categories-heading"
-                            class="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
+                            class="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
                         >
                             Featured Categories
                         </h2>
@@ -236,7 +401,7 @@ function clearFilters(): void {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        class="h-9 self-start text-xs font-semibold text-primary sm:self-auto"
+                        class="h-8 self-start text-xs font-semibold text-primary sm:self-auto"
                         @click="handleSelectCategory(null)"
                     >
                         Clear category filter
@@ -245,8 +410,13 @@ function clearFilters(): void {
 
                 <div
                     v-if="categories.length > 0"
-                    class="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4"
+                    class="grid grid-cols-1 gap-3.5 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5"
                 >
+                    <CategoryCard
+                        :category="allCategoriesCard"
+                        :active="!selectedCategory"
+                        @select="handleSelectCategory(null)"
+                    />
                     <CategoryCard
                         v-for="cat in categories"
                         :key="cat.id"
@@ -267,7 +437,7 @@ function clearFilters(): void {
             <!-- 3. Top Products Collection -->
             <section aria-labelledby="top-products-heading" class="space-y-5">
                 <div
-                    class="flex flex-col justify-between gap-2 sm:flex-row sm:items-end"
+                    class="flex flex-col justify-between gap-3 sm:flex-row sm:items-end"
                 >
                     <div>
                         <div
@@ -278,7 +448,7 @@ function clearFilters(): void {
                         </div>
                         <h2
                             id="top-products-heading"
-                            class="mt-1 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
+                            class="mt-0.5 text-xl font-bold tracking-tight text-foreground sm:text-2xl"
                         >
                             Top Products
                         </h2>
@@ -355,7 +525,6 @@ function clearFilters(): void {
             </section>
 
             <!-- 4. Daily Interest (Editorial Banner + Supporting Campaign Tiles) -->
-            <!-- Per frontend-standards.md: If no campaign exists, hide the campaign module -->
             <DailyInterestModule
                 v-if="dailyInterest"
                 :daily-interest="dailyInterest"
@@ -375,18 +544,28 @@ function clearFilters(): void {
                 <div class="py-4">
                     <div
                         v-if="effectiveCart.itemCount > 0"
-                        class="rounded-xl border border-border bg-secondary/40 p-4 text-sm"
+                        class="space-y-2 rounded-xl border border-border bg-secondary/40 p-4 text-sm"
                     >
-                        <p class="font-semibold text-foreground">
-                            {{ effectiveCart.itemCount }}
-                            {{
-                                effectiveCart.itemCount === 1 ? 'item' : 'items'
-                            }}
-                            selected in current session
-                        </p>
+                        <div class="flex items-center justify-between gap-2">
+                            <p class="font-semibold text-foreground">
+                                {{ effectiveCart.itemCount }}
+                                {{
+                                    effectiveCart.itemCount === 1
+                                        ? 'item'
+                                        : 'items'
+                                }}
+                                selected in current session
+                            </p>
+                            <span
+                                v-if="effectiveCart.subtotalFormatted"
+                                class="text-sm font-bold text-primary"
+                            >
+                                {{ effectiveCart.subtotalFormatted }}
+                            </span>
+                        </div>
                         <p
                             v-if="lastSelectedProduct"
-                            class="mt-1 text-xs text-muted-foreground"
+                            class="text-xs text-muted-foreground"
                         >
                             Last added: {{ lastSelectedProduct.name }} ({{
                                 lastSelectedProduct.priceFormatted
@@ -407,12 +586,29 @@ function clearFilters(): void {
                     >
                         Continue Shopping
                     </Button>
-                    <Button v-if="!isDemoPreview" as-child class="h-11">
+                    <Button
+                        v-if="!isDemoPreview"
+                        as-child
+                        variant="secondary"
+                        class="h-11"
+                    >
                         <Link
                             :href="cartIndex.url()"
                             @click="cartDialogOpen = false"
                         >
                             View Full Cart
+                        </Link>
+                    </Button>
+                    <Button
+                        v-if="!isDemoPreview && effectiveCart.itemCount > 0"
+                        as-child
+                        class="h-11"
+                    >
+                        <Link
+                            :href="checkoutIndex.url()"
+                            @click="cartDialogOpen = false"
+                        >
+                            Checkout
                         </Link>
                     </Button>
                 </DialogFooter>

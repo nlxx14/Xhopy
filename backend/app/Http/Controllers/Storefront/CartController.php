@@ -36,6 +36,7 @@ class CartController extends Controller
         $validated = $request->validate([
             'product_id' => ['required', 'integer', 'min:1'],
             'quantity' => ['nullable', 'integer', 'min:1', 'max:'.CartItem::MAX_QUANTITY_PER_LINE],
+            'buy_now' => ['nullable', 'boolean'],
         ]);
 
         $cartService->addItem(
@@ -43,6 +44,10 @@ class CartController extends Controller
             (int) $validated['product_id'],
             (int) ($validated['quantity'] ?? 1),
         );
+
+        if ($request->boolean('buy_now')) {
+            return to_route('checkout.index');
+        }
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Added to cart.')]);
 

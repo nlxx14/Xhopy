@@ -64,6 +64,14 @@ export type OrderSummary = {
     canCancel: boolean;
 };
 
+export type OrderItemReviewSummary = {
+    id: number;
+    rating: number;
+    title: string | null;
+    comment: string | null;
+    updatedAtDiff: string;
+};
+
 export type OrderLineItemSnapshot = {
     id: number;
     productId: number | null;
@@ -73,6 +81,8 @@ export type OrderLineItemSnapshot = {
     quantity: number;
     unitPriceFormatted: string;
     lineTotalFormatted: string;
+    canReview?: boolean;
+    review?: OrderItemReviewSummary | null;
 };
 
 export type OrderTimelineEntry = {

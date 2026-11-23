@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Storefront;
 
+use App\Domain\Catalog\Models\ProductReview;
 use App\Domain\Orders\Enums\OrderStatus;
 use App\Domain\Orders\Models\Order;
 use App\Domain\Orders\Services\OrderStateTransitionService;
@@ -42,8 +43,22 @@ class OrderController extends Controller
 
         Gate::authorize('view', $order);
 
+        $productIds = $order->items
+            ->pluck('product_id')
+            ->filter()
+            ->values()
+            ->all();
+
+        $reviewsByProductId = $productIds === []
+            ? collect()
+            : ProductReview::query()
+                ->where('user_id', $order->user_id)
+                ->whereIn('product_id', $productIds)
+                ->get()
+                ->keyBy('product_id');
+
         return Inertia::render('orders/Show', [
-            'order' => $presenter->detail($order),
+            'order' => $presenter->detail($order, $reviewsByProductId),
         ]);
     }
 

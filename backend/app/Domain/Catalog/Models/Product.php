@@ -102,6 +102,14 @@ class Product extends Model
     }
 
     /**
+     * @return HasMany<ProductReview, $this>
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(ProductReview::class)->orderByDesc('created_at')->orderByDesc('id');
+    }
+
+    /**
      * The image shown on listing cards: the primary image, otherwise the first by sort order.
      *
      * @return HasOne<ProductImage, $this>

@@ -6,6 +6,7 @@ use App\Domain\Catalog\Models\CampaignContent;
 use App\Domain\Catalog\Models\Category;
 use App\Domain\Catalog\Models\Product;
 use App\Domain\Catalog\Models\ProductImage;
+use App\Domain\Catalog\Models\ProductReview;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -37,9 +38,7 @@ final class ProductPresenter
             'imageUrl' => $this->imageUrl($image?->path),
             'imageAlt' => $this->imageAlt($image, $product),
             'isWishlisted' => $isWishlisted,
-            // No reviews exist yet; never fabricate ratings.
-            'ratingAverage' => null,
-            'ratingCount' => null,
+            ...$this->ratings($product),
         ];
     }
 
@@ -48,8 +47,12 @@ final class ProductPresenter
      *
      * @return array<string, mixed>
      */
-    public function detail(Product $product, bool $isWishlisted = false): array
-    {
+    public function detail(
+        Product $product,
+        bool $isWishlisted = false,
+        bool $canReview = false,
+        ?ProductReview $userReview = null,
+    ): array {
         return [
             'id' => $product->id,
             'name' => $product->name,
@@ -74,8 +77,32 @@ final class ProductPresenter
             'imageUrl' => $this->imageUrl($product->images->first()?->path),
             'imageAlt' => $this->imageAlt($product->images->first(), $product),
             'isWishlisted' => $isWishlisted,
-            'ratingAverage' => null,
-            'ratingCount' => null,
+            ...$this->ratings($product),
+            'reviews' => $product->relationLoaded('reviews')
+                ? $product->reviews
+                    ->map(fn (ProductReview $review): array => $this->review($review))
+                    ->values()
+                    ->all()
+                : [],
+            'canReview' => $canReview,
+            'userReview' => $userReview !== null ? $this->review($userReview) : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function review(ProductReview $review): array
+    {
+        return [
+            'id' => $review->id,
+            'rating' => $review->rating,
+            'title' => $review->title,
+            'comment' => $review->comment,
+            'isVerifiedPurchase' => $review->is_verified_purchase,
+            'authorName' => $review->relationLoaded('user') ? $review->user->name : 'Verified Customer',
+            'createdAtFormatted' => $review->created_at?->toFormattedDateString() ?? 'Recently',
+            'createdAtDiff' => $review->created_at?->diffForHumans() ?? 'Recently',
         ];
     }
 
@@ -163,5 +190,37 @@ final class ProductPresenter
         return $image !== null && $image->alt_text !== null && $image->alt_text !== ''
             ? $image->alt_text
             : $product->name;
+    }
+
+    /**
+     * @return array{ratingAverage: float|null, ratingCount: int|null}
+     */
+    private function ratings(Product $product): array
+    {
+        $attributes = $product->getAttributes();
+
+        if (array_key_exists('reviews_count', $attributes)) {
+            $count = (int) $attributes['reviews_count'];
+            $avg = $attributes['reviews_avg_rating'] ?? null;
+
+            return [
+                'ratingAverage' => $count > 0 && $avg !== null ? round((float) $avg, 1) : null,
+                'ratingCount' => $count > 0 ? $count : null,
+            ];
+        }
+
+        if ($product->relationLoaded('reviews')) {
+            $count = $product->reviews->count();
+
+            return [
+                'ratingAverage' => $count > 0 ? round((float) $product->reviews->avg('rating'), 1) : null,
+                'ratingCount' => $count > 0 ? $count : null,
+            ];
+        }
+
+        return [
+            'ratingAverage' => null,
+            'ratingCount' => null,
+        ];
     }
 }

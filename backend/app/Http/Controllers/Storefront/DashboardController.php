@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Storefront;
 
 use App\Domain\Cart\Services\CartService;
 use App\Domain\Catalog\Models\Product;
+use App\Domain\Catalog\Models\ProductReview;
 use App\Domain\Catalog\Support\ProductPresenter;
 use App\Domain\Customer\Services\WishlistService;
 use App\Domain\Orders\Enums\OrderStatus;
@@ -65,6 +66,7 @@ class DashboardController extends Controller
         $cart = $cartService->present($request);
         $wishlistItems = $wishlistService->presentForUser($user);
         $buyAgainItems = $this->resolveBuyAgainItems($user, $productPresenter);
+        $pendingReviews = $this->resolvePendingDeliveredReviews($user);
 
         return Inertia::render('Dashboard', [
             'orderStats' => [
@@ -83,6 +85,7 @@ class DashboardController extends Controller
             'activeOrderTracker' => $trackedOrder === null ? null : $this->buildOrderTracker($trackedOrder, $orderPresenter),
             'wishlistItems' => $wishlistItems,
             'buyAgainItems' => $buyAgainItems,
+            'pendingReviews' => $pendingReviews,
             'accountSecurity' => [
                 'emailVerified' => $user->hasVerifiedEmail(),
                 'twoFactorEnabled' => $user->hasEnabledTwoFactorAuthentication(),
@@ -153,10 +156,68 @@ class DashboardController extends Controller
                 ->published()
                 ->whereIn('products.id', $purchasedProductIds)
                 ->with(['category:id,name,slug', 'primaryImage'])
+                ->withAvg('reviews', 'rating')
+                ->withCount('reviews')
                 ->limit(4)
                 ->get()
                 ->map(fn (Product $product): array => $productPresenter->summary($product))
                 ->all(),
         );
+    }
+
+    /**
+     * Find delivered order items that the customer has not yet rated and reviewed.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function resolvePendingDeliveredReviews(User $user): array
+    {
+        $reviewedProductIds = ProductReview::query()
+            ->where('user_id', $user->id)
+            ->pluck('product_id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        $deliveredOrders = Order::query()
+            ->where('user_id', $user->id)
+            ->where('status', OrderStatus::Delivered)
+            ->with('items')
+            ->orderByDesc('placed_at')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get();
+
+        $pending = [];
+        $seenProducts = [];
+
+        foreach ($deliveredOrders as $order) {
+            foreach ($order->items as $item) {
+                $productId = $item->product_id;
+
+                if (
+                    $productId === null
+                    || in_array($productId, $reviewedProductIds, true)
+                    || isset($seenProducts[$productId])
+                ) {
+                    continue;
+                }
+
+                $seenProducts[$productId] = true;
+                $pending[] = [
+                    'productId' => $productId,
+                    'productName' => $item->product_name,
+                    'productSlug' => $item->product_slug,
+                    'sku' => $item->sku,
+                    'orderNumber' => $order->order_number,
+                    'deliveredAtDiff' => $order->updated_at?->diffForHumans() ?? 'Recently',
+                ];
+
+                if (count($pending) >= 4) {
+                    break 2;
+                }
+            }
+        }
+
+        return $pending;
     }
 }

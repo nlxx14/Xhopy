@@ -28,10 +28,24 @@ export interface ProductImage {
     alt: string;
 }
 
+export interface ProductReview {
+    id: number;
+    rating: number;
+    title: string | null;
+    comment: string | null;
+    isVerifiedPurchase: boolean;
+    authorName: string;
+    createdAtFormatted: string;
+    createdAtDiff: string;
+}
+
 export interface ProductDetail extends ProductSummary {
     shortDescription?: string | null;
     description?: string | null;
     images: ProductImage[];
+    reviews?: ProductReview[];
+    canReview?: boolean;
+    userReview?: ProductReview | null;
 }
 
 export interface PaginationMeta {

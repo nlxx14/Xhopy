@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
+import { CheckCircle2, CreditCard } from '@lucide/vue';
+import { ref } from 'vue';
 import type { AdminOrderRow } from '@modules/admin/types';
 import Heading from '@shared/components/Heading.vue';
 import { Badge } from '@shared/components/ui/badge';
 import { Button } from '@shared/components/ui/button';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@shared/components/ui/dialog';
 import { dashboard as adminDashboard } from '@/routes/admin';
 import {
     index as adminOrdersIndex,
@@ -23,11 +33,55 @@ defineProps<{
     orders: AdminOrderRow[];
 }>();
 
+const deliveryPaymentDialogOpen = ref(false);
+const pendingDeliveryOrder = ref<AdminOrderRow | null>(null);
+const isSubmitting = ref(false);
+
 function handleTransition(order: AdminOrderRow, nextStatus: string): void {
+    if (nextStatus === 'delivered') {
+        pendingDeliveryOrder.value = order;
+        deliveryPaymentDialogOpen.value = true;
+        return;
+    }
+
     router.post(
         updateOrderStatusRoute.url(order.id),
         { status: nextStatus },
         { preserveScroll: true },
+    );
+}
+
+function openConfirmPaidForDeliveredOrder(order: AdminOrderRow): void {
+    pendingDeliveryOrder.value = order;
+    deliveryPaymentDialogOpen.value = true;
+}
+
+function submitDeliveryWithPaymentChoice(markPaid: boolean): void {
+    const order = pendingDeliveryOrder.value;
+
+    if (!order || isSubmitting.value) {
+        return;
+    }
+
+    isSubmitting.value = true;
+
+    router.post(
+        updateOrderStatusRoute.url(order.id),
+        {
+            status: 'delivered',
+            mark_paid: markPaid,
+            note: markPaid
+                ? 'Marked delivered and payment confirmed as paid.'
+                : 'Marked delivered (payment kept unpaid).',
+        },
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                isSubmitting.value = false;
+                deliveryPaymentDialogOpen.value = false;
+                pendingDeliveryOrder.value = null;
+            },
+        },
     );
 }
 </script>
@@ -127,6 +181,23 @@ function handleTransition(order: AdminOrderRow, nextStatus: string): void {
                                     → {{ next.label }}
                                 </Button>
                             </div>
+                            <Button
+                                v-else-if="
+                                    order.status === 'delivered' &&
+                                    order.paymentStatus !== 'paid'
+                                "
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                class="h-8 gap-1.5 rounded-lg border-amber-500/50 text-xs font-semibold text-amber-500 hover:text-amber-400"
+                                @click="openConfirmPaidForDeliveredOrder(order)"
+                            >
+                                <CreditCard
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
+                                <span>Is Order Paid?</span>
+                            </Button>
                             <span
                                 v-else
                                 class="text-xs text-muted-foreground italic"
@@ -138,5 +209,92 @@ function handleTransition(order: AdminOrderRow, nextStatus: string): void {
                 </tbody>
             </table>
         </div>
+
+        <!-- Post-Delivery Payment Confirmation Dialog -->
+        <Dialog v-model:open="deliveryPaymentDialogOpen">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle class="flex items-center gap-2">
+                        <CheckCircle2
+                            class="size-5 text-primary"
+                            aria-hidden="true"
+                        />
+                        <span>Confirm Delivery &amp; Payment Status</span>
+                    </DialogTitle>
+                    <DialogDescription v-if="pendingDeliveryOrder">
+                        You are marking order
+                        <strong class="text-foreground">{{
+                            pendingDeliveryOrder.orderNumber
+                        }}</strong>
+                        as <strong class="text-foreground">Delivered</strong>.
+                        Has the customer paid for this order?
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div
+                    v-if="pendingDeliveryOrder"
+                    class="space-y-2 rounded-xl border border-border bg-secondary/35 p-4 text-xs"
+                >
+                    <div class="flex items-center justify-between">
+                        <span class="text-muted-foreground">Customer</span>
+                        <span class="font-semibold text-foreground">{{
+                            pendingDeliveryOrder.customerName
+                        }}</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-muted-foreground"
+                            >Payment Method</span
+                        >
+                        <span class="font-semibold text-foreground">
+                            {{
+                                pendingDeliveryOrder.paymentMethod ===
+                                'cash_on_delivery'
+                                    ? 'Cash on Delivery (COD)'
+                                    : 'PayMongo Online Checkout'
+                            }}
+                        </span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <span class="text-muted-foreground"
+                            >Current Payment Status</span
+                        >
+                        <Badge variant="secondary" class="text-[11px]">
+                            {{ pendingDeliveryOrder.paymentStatusLabel }}
+                        </Badge>
+                    </div>
+                    <div
+                        class="flex items-center justify-between border-t border-border/70 pt-2 text-sm"
+                    >
+                        <span class="font-medium text-muted-foreground"
+                            >Order Total</span
+                        >
+                        <span class="font-extrabold text-foreground">{{
+                            pendingDeliveryOrder.totalFormatted
+                        }}</span>
+                    </div>
+                </div>
+
+                <DialogFooter class="flex-col gap-2 sm:flex-row">
+                    <Button
+                        type="button"
+                        variant="outline"
+                        class="h-10 rounded-xl text-xs"
+                        :disabled="isSubmitting"
+                        @click="submitDeliveryWithPaymentChoice(false)"
+                    >
+                        Delivered (Not Paid Yet)
+                    </Button>
+                    <Button
+                        type="button"
+                        class="h-10 gap-1.5 rounded-xl text-xs font-semibold"
+                        :disabled="isSubmitting"
+                        @click="submitDeliveryWithPaymentChoice(true)"
+                    >
+                        <CheckCircle2 class="size-4" aria-hidden="true" />
+                        <span>Yes, Paid &amp; Delivered</span>
+                    </Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

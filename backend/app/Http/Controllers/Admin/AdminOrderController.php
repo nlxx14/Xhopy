@@ -66,23 +66,33 @@ class AdminOrderController extends Controller
         $validated = $request->validate([
             'status' => ['required', Rule::enum(OrderStatus::class)],
             'note' => ['nullable', 'string', 'max:255'],
+            'mark_paid' => ['nullable', 'boolean'],
         ]);
 
         $targetStatus = OrderStatus::from((string) $validated['status']);
         $previousStatus = $order->status;
+        $markPaid = $request->boolean('mark_paid');
         $note = isset($validated['note']) && trim((string) $validated['note']) !== ''
             ? trim((string) $validated['note'])
             : sprintf('Updated by %s (%s).', $request->user()->name, $request->user()->role->value);
 
-        try {
-            $updated = $transitions->transition($order, $targetStatus, $request->user(), $note);
-        } catch (InvalidArgumentException $exception) {
-            throw ValidationException::withMessages([
-                'status' => $exception->getMessage(),
-            ]);
+        // Allow confirming payment on an order that is already in Delivered state
+        if ($previousStatus === OrderStatus::Delivered && $targetStatus === OrderStatus::Delivered && $markPaid) {
+            $updated = $order;
+        } else {
+            try {
+                $updated = $transitions->transition($order, $targetStatus, $request->user(), $note);
+            } catch (InvalidArgumentException $exception) {
+                throw ValidationException::withMessages([
+                    'status' => $exception->getMessage(),
+                ]);
+            }
         }
 
-        if ($targetStatus === OrderStatus::Paid && $updated->payment_status !== PaymentStatus::Paid) {
+        if (
+            ($targetStatus === OrderStatus::Paid || ($targetStatus === OrderStatus::Delivered && $markPaid))
+            && $updated->payment_status !== PaymentStatus::Paid
+        ) {
             $updated->payment_status = PaymentStatus::Paid;
             $updated->paid_at = $updated->paid_at ?? now();
             $updated->save();

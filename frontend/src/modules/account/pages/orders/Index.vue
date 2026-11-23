@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ArrowRight, Package, ShoppingBag } from '@lucide/vue';
+import { ArrowRight, Package, ShoppingBag, Star } from '@lucide/vue';
 import type { OrderSummary } from '@modules/account/types';
 import EmptyState from '@shared/components/EmptyState.vue';
 import Heading from '@shared/components/Heading.vue';
@@ -86,16 +86,37 @@ defineProps<{
                         </p>
                     </div>
 
-                    <Button
-                        as-child
-                        variant="outline"
-                        class="h-10 gap-1.5 rounded-xl text-xs font-semibold"
-                    >
-                        <Link :href="orderShow.url(order.orderNumber)">
-                            <span>View Details</span>
-                            <ArrowRight class="size-3.5" aria-hidden="true" />
-                        </Link>
-                    </Button>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <Button
+                            v-if="order.status === 'delivered'"
+                            as-child
+                            class="h-10 gap-1.5 rounded-xl text-xs font-semibold"
+                        >
+                            <Link
+                                :href="`${orderShow.url(order.orderNumber)}?review=1`"
+                            >
+                                <Star
+                                    class="size-3.5 fill-current"
+                                    aria-hidden="true"
+                                />
+                                <span>Rate Purchase</span>
+                            </Link>
+                        </Button>
+
+                        <Button
+                            as-child
+                            variant="outline"
+                            class="h-10 gap-1.5 rounded-xl text-xs font-semibold"
+                        >
+                            <Link :href="orderShow.url(order.orderNumber)">
+                                <span>View Details</span>
+                                <ArrowRight
+                                    class="size-3.5"
+                                    aria-hidden="true"
+                                />
+                            </Link>
+                        </Button>
+                    </div>
                 </div>
             </article>
         </div>

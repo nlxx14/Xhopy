@@ -41,7 +41,37 @@ const isStaffOrAdmin = computed(() => {
 });
 
 const mainNavItems = computed<NavItem[]>(() => {
-    const items: NavItem[] = [
+    if (isStaffOrAdmin.value) {
+        return [
+            {
+                title: 'Admin Overview',
+                href: adminDashboard(),
+                icon: ShieldCheck,
+            },
+            {
+                title: 'Catalog & Inventory',
+                href: adminProductsIndex(),
+                icon: Boxes,
+            },
+            {
+                title: 'Order Fulfillment',
+                href: adminOrdersIndex(),
+                icon: ClipboardList,
+            },
+            {
+                title: 'Customers & Audit',
+                href: adminCustomersIndex(),
+                icon: Users,
+            },
+            {
+                title: 'Storefront',
+                href: home(),
+                icon: Store,
+            },
+        ];
+    }
+
+    return [
         {
             title: 'Dashboard',
             href: dashboard(),
@@ -63,33 +93,6 @@ const mainNavItems = computed<NavItem[]>(() => {
             icon: Store,
         },
     ];
-
-    if (isStaffOrAdmin.value) {
-        items.push(
-            {
-                title: 'Admin Overview',
-                href: adminDashboard(),
-                icon: ShieldCheck,
-            },
-            {
-                title: 'Catalog & Inventory',
-                href: adminProductsIndex(),
-                icon: Boxes,
-            },
-            {
-                title: 'Order Fulfillment',
-                href: adminOrdersIndex(),
-                icon: ClipboardList,
-            },
-            {
-                title: 'Customers & Audit',
-                href: adminCustomersIndex(),
-                icon: Users,
-            },
-        );
-    }
-
-    return items;
 });
 </script>
 
@@ -99,7 +102,11 @@ const mainNavItems = computed<NavItem[]>(() => {
             <SidebarMenu>
                 <SidebarMenuItem>
                     <SidebarMenuButton size="lg" as-child>
-                        <Link :href="dashboard()">
+                        <Link
+                            :href="
+                                isStaffOrAdmin ? adminDashboard() : dashboard()
+                            "
+                        >
                             <AppLogo />
                         </Link>
                     </SidebarMenuButton>

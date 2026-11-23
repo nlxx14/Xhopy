@@ -42,7 +42,9 @@ final class ProductListingQuery
     {
         $query = Product::query()
             ->published()
-            ->with(['category:id,name,slug', 'primaryImage']);
+            ->with(['category:id,name,slug', 'primaryImage'])
+            ->withAvg('reviews', 'rating')
+            ->withCount('reviews');
 
         if ($filters->category !== null) {
             $query->whereIn(
