@@ -23,7 +23,7 @@ test('home shows real featured products first and limits the collection', functi
         ->assertInertia(fn (Assert $page) => $page
             ->component('Welcome')
             ->where('isDemoPreview', false)
-            ->has('topProducts', 8)
+            ->has('topProducts', 6)
             ->where('topProducts.0.name', 'Top Pick')
         );
 });
@@ -166,7 +166,7 @@ test('home ranks top products by highest sold quantity and caps daily discover a
     $this->get(route('home'))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
-            ->has('topProducts', 8)
+            ->has('topProducts', 6)
             ->where('topProducts.0.name', 'Best Seller')
             ->where('topProducts.0.soldCount', 7)
             ->where('topProducts.1.name', 'Featured Unsold')

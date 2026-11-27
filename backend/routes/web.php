@@ -24,6 +24,12 @@ Route::get('health/ready', HealthCheckController::class)
     ->name('health.ready');
 
 Route::get('products', [CatalogController::class, 'index'])->name('products.index');
+Route::get('categories/{categorySlug}', [CatalogController::class, 'category'])
+    ->where('categorySlug', '[A-Za-z0-9_-]+')
+    ->name('categories.show');
+Route::get('catalog/suggestions', [CatalogController::class, 'suggestions'])
+    ->middleware('throttle:120,1')
+    ->name('catalog.suggestions');
 Route::get('products/{slug}', [ProductController::class, 'show'])
     ->where('slug', '[A-Za-z0-9_-]+')
     ->name('products.show');

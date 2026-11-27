@@ -6,6 +6,31 @@ export interface AdminMetrics {
     lowStockProducts: number;
 }
 
+export interface DailySalesPoint {
+    date: string;
+    label: string;
+    revenueCents: number;
+    revenueFormatted: string;
+    orderCount: number;
+}
+
+export interface TopSellingProductEntry {
+    productId: number | null;
+    name: string;
+    sku: string;
+    unitsSold: number;
+    revenueFormatted: string;
+}
+
+export interface LowStockAlertEntry {
+    productId: number;
+    name: string;
+    sku: string;
+    variantLabel: string;
+    stock: number;
+    isOutOfStock: boolean;
+}
+
 export interface StockMovementEntry {
     id: number;
     productName: string;

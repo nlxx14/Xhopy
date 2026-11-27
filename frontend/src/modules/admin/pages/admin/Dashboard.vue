@@ -2,16 +2,22 @@
 import { Head, Link } from '@inertiajs/vue3';
 import {
     AlertTriangle,
+    BarChart3,
     Boxes,
     ClipboardList,
     History,
     PackageCheck,
+    TrendingUp,
     Users,
 } from '@lucide/vue';
+import { computed } from 'vue';
 import type {
     AdminAuditEntry,
     AdminMetrics,
+    DailySalesPoint,
+    LowStockAlertEntry,
     StockMovementEntry,
+    TopSellingProductEntry,
 } from '@modules/admin/types';
 import Heading from '@shared/components/Heading.vue';
 import { Badge } from '@shared/components/ui/badge';
@@ -32,11 +38,26 @@ defineOptions({
     },
 });
 
-defineProps<{
+const props = defineProps<{
     metrics: AdminMetrics;
+    dailySales?: DailySalesPoint[];
+    topSellingProducts?: TopSellingProductEntry[];
+    lowStockAlerts?: LowStockAlertEntry[];
     recentMovements: StockMovementEntry[];
     recentAuditLogs: AdminAuditEntry[];
 }>();
+
+const maxDailyRevenueCents = computed(() => {
+    const values = (props.dailySales ?? []).map((point) => point.revenueCents);
+    return Math.max(100, ...values);
+});
+
+function barHeightPercent(cents: number): number {
+    if (cents <= 0) {
+        return 6;
+    }
+    return Math.max(12, Math.round((cents / maxDailyRevenueCents.value) * 100));
+}
 </script>
 
 <template>
@@ -148,6 +169,184 @@ defineProps<{
                     />
                 </p>
             </div>
+        </div>
+
+        <!-- Sales Analytics & Low-Stock Variant Alerts -->
+        <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
+            <!-- 7-Day Revenue & Order Volume Chart -->
+            <section
+                aria-labelledby="daily-sales-heading"
+                class="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-2xs lg:col-span-5"
+            >
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <BarChart3
+                            class="size-4 text-primary"
+                            aria-hidden="true"
+                        />
+                        <h2
+                            id="daily-sales-heading"
+                            class="text-base font-bold text-foreground"
+                        >
+                            7-Day Order Revenue
+                        </h2>
+                    </div>
+                    <span class="text-xs text-muted-foreground">
+                        Last 7 days
+                    </span>
+                </div>
+
+                <div
+                    v-if="dailySales && dailySales.length > 0"
+                    class="flex h-44 items-end gap-2 pt-4"
+                >
+                    <div
+                        v-for="point in dailySales"
+                        :key="point.date"
+                        class="group flex flex-1 flex-col items-center gap-2"
+                    >
+                        <div
+                            class="relative flex h-32 w-full items-end justify-center rounded-lg bg-secondary/35 p-1"
+                            :title="`${point.label}: ${point.revenueFormatted} (${point.orderCount} order${point.orderCount === 1 ? '' : 's'})`"
+                        >
+                            <div
+                                class="w-full rounded-md bg-primary/85 transition-all duration-300 group-hover:bg-primary"
+                                :style="{
+                                    height: `${barHeightPercent(point.revenueCents)}%`,
+                                }"
+                            />
+                        </div>
+                        <div class="text-center">
+                            <p
+                                class="text-[11px] font-semibold text-foreground"
+                            >
+                                {{ point.label }}
+                            </p>
+                            <p class="text-[10px] text-muted-foreground">
+                                {{ point.orderCount }} ord
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <p v-else class="text-xs text-muted-foreground">
+                    No order revenue recorded in the last 7 days.
+                </p>
+            </section>
+
+            <!-- Top Selling Products -->
+            <section
+                aria-labelledby="top-selling-heading"
+                class="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-2xs lg:col-span-3"
+            >
+                <div class="flex items-center gap-2">
+                    <TrendingUp
+                        class="size-4 text-primary"
+                        aria-hidden="true"
+                    />
+                    <h2
+                        id="top-selling-heading"
+                        class="text-base font-bold text-foreground"
+                    >
+                        Top Selling
+                    </h2>
+                </div>
+
+                <ul
+                    v-if="topSellingProducts && topSellingProducts.length > 0"
+                    class="divide-y divide-border/70"
+                >
+                    <li
+                        v-for="(item, idx) in topSellingProducts"
+                        :key="`${item.sku}-${idx}`"
+                        class="flex items-center justify-between gap-2 py-2.5 text-xs"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold text-foreground">
+                                {{ item.name }}
+                            </p>
+                            <p class="text-[11px] text-muted-foreground">
+                                {{ item.unitsSold }} sold · {{ item.sku }}
+                            </p>
+                        </div>
+                        <span
+                            class="shrink-0 font-bold text-primary tabular-nums"
+                        >
+                            {{ item.revenueFormatted }}
+                        </span>
+                    </li>
+                </ul>
+
+                <p v-else class="text-xs text-muted-foreground">
+                    Sales rankings will appear once orders are placed.
+                </p>
+            </section>
+
+            <!-- Low-Stock & Out-of-Stock Variant Alerts -->
+            <section
+                aria-labelledby="low-stock-alerts-heading"
+                class="space-y-4 rounded-2xl border border-border bg-card p-6 shadow-2xs lg:col-span-4"
+            >
+                <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <AlertTriangle
+                            class="size-4 text-primary"
+                            aria-hidden="true"
+                        />
+                        <h2
+                            id="low-stock-alerts-heading"
+                            class="text-base font-bold text-foreground"
+                        >
+                            Low-Stock Alerts
+                        </h2>
+                    </div>
+
+                    <Link
+                        :href="adminProductsIndex.url()"
+                        class="text-xs font-semibold text-primary hover:underline"
+                    >
+                        Restock →
+                    </Link>
+                </div>
+
+                <ul
+                    v-if="lowStockAlerts && lowStockAlerts.length > 0"
+                    class="divide-y divide-border/70"
+                >
+                    <li
+                        v-for="(alert, idx) in lowStockAlerts"
+                        :key="`${alert.productId}-${alert.variantLabel}-${idx}`"
+                        class="flex items-center justify-between gap-2 py-2.5 text-xs"
+                    >
+                        <div class="min-w-0">
+                            <p class="truncate font-semibold text-foreground">
+                                {{ alert.name }}
+                            </p>
+                            <p
+                                class="truncate text-[11px] text-muted-foreground"
+                            >
+                                {{ alert.variantLabel }} · {{ alert.sku }}
+                            </p>
+                        </div>
+                        <Badge
+                            :variant="
+                                alert.isOutOfStock ? 'destructive' : 'secondary'
+                            "
+                            class="shrink-0 text-[11px] font-bold tabular-nums"
+                        >
+                            {{
+                                alert.isOutOfStock
+                                    ? 'Out of stock'
+                                    : `${alert.stock} left`
+                            }}
+                        </Badge>
+                    </li>
+                </ul>
+
+                <p v-else class="text-xs text-muted-foreground">
+                    All active products and variants are well stocked.
+                </p>
+            </section>
         </div>
 
         <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">

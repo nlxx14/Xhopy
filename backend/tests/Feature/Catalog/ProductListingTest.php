@@ -243,3 +243,18 @@ test('category sidebar lists active categories with published product counts', f
             ->where('categories.1.productCount', 0)
         );
 });
+
+test('catalog suggestions endpoint returns matching published products only', function () {
+    Product::factory()->create(['name' => 'Kuikma Pickleball Paddle']);
+    Product::factory()->draft()->create(['name' => 'Kuikma Draft Paddle']);
+    Product::factory()->create(['name' => 'Leather Wallet']);
+
+    $this->getJson(route('catalog.suggestions', ['q' => 'Kuikma']))
+        ->assertOk()
+        ->assertJsonCount(1, 'items')
+        ->assertJsonPath('items.0.name', 'Kuikma Pickleball Paddle');
+
+    $this->getJson(route('catalog.suggestions', ['q' => '']))
+        ->assertOk()
+        ->assertJsonCount(0, 'items');
+});

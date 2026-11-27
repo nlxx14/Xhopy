@@ -17,7 +17,7 @@ use Inertia\Response;
 
 class HomeController extends Controller
 {
-    private const TOP_PRODUCT_LIMIT = 8;
+    private const TOP_PRODUCT_LIMIT = 6;
 
     private const DAILY_DISCOVER_LIMIT = 40;
 

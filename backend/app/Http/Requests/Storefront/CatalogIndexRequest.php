@@ -33,6 +33,8 @@ class CatalogIndexRequest extends FormRequest
                 Rule::when($this->filled('min_price'), ['gte:min_price']),
             ],
             'in_stock' => ['nullable', 'boolean'],
+            'on_sale' => ['nullable', 'boolean'],
+            'min_rating' => ['nullable', 'integer', 'min:1', 'max:5'],
             'sort' => ['nullable', Rule::enum(ProductSort::class)],
             'per_page' => ['nullable', 'integer', Rule::in(CatalogFilters::PER_PAGE_OPTIONS)],
             'page' => ['nullable', 'integer', 'min:1', 'max:100000'],

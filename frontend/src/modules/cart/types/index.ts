@@ -21,6 +21,9 @@ export interface CartLineItem {
     imageAlt: string;
     selectedColor?: string | null;
     selectedSize?: string | null;
+    availableColors?: string[];
+    availableSizes?: string[];
+    variantStocks?: Record<string, number> | null;
 }
 
 export interface CartDetail {

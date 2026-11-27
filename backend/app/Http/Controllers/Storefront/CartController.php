@@ -64,8 +64,30 @@ class CartController extends Controller
         CartService $cartService,
     ): RedirectResponse {
         $validated = $request->validate([
-            'quantity' => ['required', 'integer', 'min:0', 'max:'.CartItem::MAX_QUANTITY_PER_LINE],
+            'quantity' => ['nullable', 'integer', 'min:0', 'max:'.CartItem::MAX_QUANTITY_PER_LINE],
+            'selected_color' => ['nullable', 'string', 'max:80'],
+            'selected_size' => ['nullable', 'string', 'max:80'],
         ]);
+
+        if ($request->has('selected_color') || $request->has('selected_size')) {
+            $cartService->updateItemVariant(
+                $request,
+                $cartItem,
+                $request->has('selected_color') ? ($validated['selected_color'] !== null ? (string) $validated['selected_color'] : null) : $cartItem->selected_color,
+                $request->has('selected_size') ? ($validated['selected_size'] !== null ? (string) $validated['selected_size'] : null) : $cartItem->selected_size,
+                isset($validated['quantity']) ? (int) $validated['quantity'] : null,
+            );
+
+            Inertia::flash('toast', ['type' => 'success', 'message' => __('Cart variant updated.')]);
+
+            return back();
+        }
+
+        if (! array_key_exists('quantity', $validated) || $validated['quantity'] === null) {
+            $cartService->updateItemQuantity($request, $cartItem, $cartItem->quantity);
+
+            return back();
+        }
 
         $cartService->updateItemQuantity($request, $cartItem, (int) $validated['quantity']);
 

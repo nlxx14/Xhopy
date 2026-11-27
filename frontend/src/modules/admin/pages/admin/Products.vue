@@ -305,6 +305,25 @@ function setColorImageUrl(color: string, value: string | number): void {
     };
 }
 
+function colorImageError(index: number): string | undefined {
+    const errors = productForm.errors as Record<string, string | undefined>;
+    return (
+        errors[`color_images.${index}.file`] ??
+        errors[`color_images.${index}.url`] ??
+        errors[`color_images.${index}.color`]
+    );
+}
+
+const mainImageError = computed<string | undefined>(
+    () => (productForm.errors as Record<string, string | undefined>).image,
+);
+
+const productFormErrorList = computed<string[]>(() =>
+    Object.values(
+        productForm.errors as Record<string, string | undefined>,
+    ).filter((msg): msg is string => Boolean(msg && msg.trim() !== '')),
+);
+
 const categoryForm = useForm({
     name: '',
     slug: '',
@@ -1142,6 +1161,7 @@ function submitCsvImport(): void {
                             class="block w-full cursor-pointer text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-primary-foreground hover:file:bg-primary/90"
                             @change="handleProductImageSelect"
                         />
+                        <InputError :message="mainImageError" />
 
                         <div class="grid gap-1">
                             <Label
@@ -1225,6 +1245,9 @@ function submitCsvImport(): void {
                                         setColorImageUrl(color, $event)
                                     "
                                 />
+                                <InputError
+                                    :message="colorImageError(colorIndex)"
+                                />
                             </div>
                         </div>
                     </div>
@@ -1243,6 +1266,23 @@ function submitCsvImport(): void {
                             page
                         </span>
                     </label>
+
+                    <div
+                        v-if="productFormErrorList.length > 0"
+                        class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+                    >
+                        <p class="font-semibold">
+                            Could not save product. Please fix:
+                        </p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-4">
+                            <li
+                                v-for="(err, idx) in productFormErrorList"
+                                :key="idx"
+                            >
+                                {{ err }}
+                            </li>
+                        </ul>
+                    </div>
 
                     <DialogFooter class="gap-2">
                         <Button
@@ -1293,6 +1333,23 @@ function submitCsvImport(): void {
                         <InputError
                             :message="categoryForm.errors.description"
                         />
+                    </div>
+
+                    <div
+                        v-if="productFormErrorList.length > 0"
+                        class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+                    >
+                        <p class="font-semibold">
+                            Could not save product. Please fix:
+                        </p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-4">
+                            <li
+                                v-for="(err, idx) in productFormErrorList"
+                                :key="idx"
+                            >
+                                {{ err }}
+                            </li>
+                        </ul>
                     </div>
 
                     <DialogFooter class="gap-2">
@@ -1398,6 +1455,23 @@ function submitCsvImport(): void {
                         <InputError :message="stockForm.errors.reason" />
                     </div>
 
+                    <div
+                        v-if="productFormErrorList.length > 0"
+                        class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+                    >
+                        <p class="font-semibold">
+                            Could not save product. Please fix:
+                        </p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-4">
+                            <li
+                                v-for="(err, idx) in productFormErrorList"
+                                :key="idx"
+                            >
+                                {{ err }}
+                            </li>
+                        </ul>
+                    </div>
+
                     <DialogFooter class="gap-2">
                         <Button
                             type="button"
@@ -1438,6 +1512,23 @@ function submitCsvImport(): void {
                             class="w-full rounded-xl border border-input bg-background p-3 font-mono text-xs text-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
                         />
                         <InputError :message="importForm.errors.csv_data" />
+                    </div>
+
+                    <div
+                        v-if="productFormErrorList.length > 0"
+                        class="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-xs text-destructive"
+                    >
+                        <p class="font-semibold">
+                            Could not save product. Please fix:
+                        </p>
+                        <ul class="mt-1 list-disc space-y-0.5 pl-4">
+                            <li
+                                v-for="(err, idx) in productFormErrorList"
+                                :key="idx"
+                            >
+                                {{ err }}
+                            </li>
+                        </ul>
                     </div>
 
                     <DialogFooter class="gap-2">

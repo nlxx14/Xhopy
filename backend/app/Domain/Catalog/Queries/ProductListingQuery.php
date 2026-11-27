@@ -75,6 +75,14 @@ final class ProductListingQuery
         return $query->inRandomOrder()->limit($limit)->get();
     }
 
+    public function maxPublishedPrice(): int
+    {
+        $max = (float) (Product::query()->published()->max('products.price') ?? 0);
+        $rounded = (int) (ceil(max(20000, $max) / 1000) * 1000);
+
+        return max(20000, $rounded);
+    }
+
     /**
      * @return Builder<Product>
      */
@@ -119,6 +127,19 @@ final class ProductListingQuery
 
         if ($filters->inStockOnly) {
             $query->where('products.stock_quantity', '>', 0);
+        }
+
+        if ($filters->onSaleOnly) {
+            $query
+                ->whereNotNull('products.compare_at_price')
+                ->whereColumn('products.compare_at_price', '>', 'products.price');
+        }
+
+        if ($filters->minRating !== null) {
+            $query->whereRaw(
+                '(SELECT AVG(product_reviews.rating) FROM product_reviews WHERE product_reviews.product_id = products.id) >= ?',
+                [$filters->minRating],
+            );
         }
 
         return $query;

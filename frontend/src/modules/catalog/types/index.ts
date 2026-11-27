@@ -75,6 +75,8 @@ export interface CatalogFilterState {
     minPrice: string | null;
     maxPrice: string | null;
     inStock: boolean;
+    onSale: boolean;
+    minRating: number | null;
     sort: string;
     perPage: number;
 }

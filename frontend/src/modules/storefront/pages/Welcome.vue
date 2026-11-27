@@ -116,6 +116,16 @@ function handleSearch(query: string): void {
 }
 
 function handleSelectCategory(slug: string | null): void {
+    if (slug && !props.isDemoPreview) {
+        router.get(`/categories/${encodeURIComponent(slug)}`);
+        return;
+    }
+
+    if (!slug && !props.isDemoPreview) {
+        router.get(productsIndex.url());
+        return;
+    }
+
     router.get(
         home.url({
             query: {
@@ -155,6 +165,15 @@ function clearFilters(): void {
             },
         }),
     );
+}
+
+function formatSoldLabel(soldCount: number | undefined): string {
+    const count = Math.max(0, soldCount ?? 0);
+    if (count >= 1000) {
+        const formatted = (count / 1000).toFixed(1).replace(/\.0$/, '');
+        return `${formatted}K+ Sold`;
+    }
+    return `${count} Sold`;
 }
 </script>
 
@@ -498,15 +517,67 @@ function clearFilters(): void {
 
                 <div
                     v-if="filteredProducts.length > 0"
-                    class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4"
+                    class="grid grid-cols-2 gap-3.5 sm:grid-cols-3 lg:grid-cols-6"
                 >
-                    <ProductCard
+                    <component
+                        :is="!isDemoPreview ? Link : 'div'"
                         v-for="product in filteredProducts"
-                        :key="product.id"
-                        :product="product"
-                        :linkable="!isDemoPreview"
-                        @add-to-cart="handleAddToCart"
-                    />
+                        :key="`top-${product.id}`"
+                        v-bind="
+                            !isDemoPreview
+                                ? { href: showProduct.url(product.slug) }
+                                : {}
+                        "
+                        class="group flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card transition-all hover:border-primary/50 hover:shadow-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                        <div
+                            class="relative aspect-square w-full overflow-hidden bg-secondary/50"
+                        >
+                            <img
+                                v-if="product.imageUrl"
+                                :src="product.imageUrl"
+                                :alt="product.imageAlt"
+                                loading="lazy"
+                                decoding="async"
+                                class="size-full object-cover transition-transform duration-300 motion-safe:group-hover:scale-105"
+                            />
+                            <div
+                                v-else
+                                class="flex size-full flex-col items-center justify-center gap-2 p-4 text-muted-foreground"
+                                aria-hidden="true"
+                            >
+                                <ShoppingBag class="size-8 opacity-60" />
+                                <span
+                                    v-if="product.sku"
+                                    class="font-mono text-[10px] tracking-wider uppercase opacity-70"
+                                >
+                                    {{ product.sku }}
+                                </span>
+                            </div>
+
+                            <!-- TOP Ribbon Badge -->
+                            <div
+                                class="absolute top-0 left-3 flex h-8 w-8 items-center justify-center rounded-b-md bg-primary text-[10px] font-extrabold tracking-wider text-primary-foreground shadow-sm"
+                            >
+                                TOP
+                            </div>
+
+                            <!-- Bottom Sold Count Overlay -->
+                            <div
+                                class="absolute inset-x-0 bottom-0 bg-black/65 px-2.5 py-1.5 text-center text-xs font-semibold text-white backdrop-blur-xs"
+                            >
+                                {{ formatSoldLabel(product.soldCount) }}
+                            </div>
+                        </div>
+
+                        <div class="px-2.5 py-2.5 text-center">
+                            <p
+                                class="line-clamp-1 text-xs font-semibold text-foreground transition-colors group-hover:text-primary"
+                            >
+                                {{ product.name }}
+                            </p>
+                        </div>
+                    </component>
                 </div>
 
                 <EmptyState

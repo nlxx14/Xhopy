@@ -246,3 +246,54 @@ test('per-variant stocks enforce limits independently, deduct atomically on chec
         ->and($product->stockForVariant('Red'))->toBe(2)
         ->and($product->stockForVariant('Blue'))->toBe(5);
 });
+
+test('cart item variant can be changed inline, clamps to stock, and merges duplicate variants', function () {
+    $customer = User::factory()->create();
+
+    $product = Product::factory()->create([
+        'name' => 'Kuikma Paddle',
+        'price' => '1400.00',
+        'available_colors' => ['Blue', 'Red', 'Purple'],
+        'variant_stocks' => [
+            'Blue|' => 5,
+            'Red|' => 2,
+            'Purple|' => 0,
+        ],
+        'stock_quantity' => 7,
+    ]);
+
+    // Add 4 Blue and 1 Red
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 4,
+        'selected_color' => 'Blue',
+    ])->assertSessionHasNoErrors();
+
+    $this->actingAs($customer)->post(route('cart.items.store'), [
+        'product_id' => $product->id,
+        'quantity' => 1,
+        'selected_color' => 'Red',
+    ])->assertSessionHasNoErrors();
+
+    $cartPage = $this->actingAs($customer)->get(route('cart.index'))->assertOk();
+    $blueLine = collect($cartPage->inertiaProps('cart.items'))->firstWhere('selectedColor', 'Blue');
+    expect($blueLine)->not->toBeNull();
+
+    // Switching Blue to out-of-stock Purple is rejected
+    $this->actingAs($customer)->patch(route('cart.items.update', $blueLine['id']), [
+        'selected_color' => 'Purple',
+    ])->assertSessionHasErrors('selected_color');
+
+    // Switching Blue (qty 4) to Red (already qty 1, stock 2) merges and clamps to 2
+    $this->actingAs($customer)->patch(route('cart.items.update', $blueLine['id']), [
+        'selected_color' => 'Red',
+    ])->assertSessionHasNoErrors();
+
+    $this->actingAs($customer)->get(route('cart.index'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->has('cart.items', 1)
+            ->where('cart.items.0.selectedColor', 'Red')
+            ->where('cart.items.0.quantity', 2)
+        );
+});

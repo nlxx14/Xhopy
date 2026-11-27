@@ -216,6 +216,80 @@ final class CartService
         return $item;
     }
 
+    public function updateItemVariant(
+        Request $request,
+        CartItem $item,
+        ?string $selectedColor,
+        ?string $selectedSize,
+        ?int $requestedQuantity = null,
+    ): CartItem {
+        $this->ensureItemBelongsToCurrentCart($request, $item);
+
+        $product = Product::query()->published()->find($item->product_id);
+
+        if ($product === null || ! $product->isInStock()) {
+            throw ValidationException::withMessages([
+                'quantity' => __('This product is no longer available in stock.'),
+            ]);
+        }
+
+        $resolvedColor = $this->resolveOption($product->available_colors ?? [], $selectedColor, 'selected_color', 'color');
+        $resolvedSize = $this->resolveOption($product->available_sizes ?? [], $selectedSize, 'selected_size', 'size');
+        $variantStock = $product->stockForVariant($resolvedColor, $resolvedSize);
+
+        if ($variantStock <= 0) {
+            throw ValidationException::withMessages([
+                'selected_color' => __('The selected option for :name is currently out of stock.', [
+                    'name' => $product->name,
+                ]),
+            ]);
+        }
+
+        return DB::transaction(function () use ($item, $product, $resolvedColor, $resolvedSize, $variantStock, $requestedQuantity): CartItem {
+            $duplicate = CartItem::query()
+                ->where('cart_id', $item->cart_id)
+                ->where('product_id', $product->id)
+                ->where('selected_color', $resolvedColor)
+                ->where('selected_size', $resolvedSize)
+                ->where('id', '!=', $item->id)
+                ->lockForUpdate()
+                ->first();
+
+            $otherLinesQuantity = $product->hasVariantStocks()
+                ? 0
+                : (int) CartItem::query()
+                    ->where('cart_id', $item->cart_id)
+                    ->where('product_id', $product->id)
+                    ->where('id', '!=', $item->id)
+                    ->when($duplicate !== null, fn ($q) => $q->where('id', '!=', $duplicate->id))
+                    ->sum('quantity');
+
+            $availableBudget = $product->hasVariantStocks()
+                ? $variantStock
+                : max(0, $product->stock_quantity - $otherLinesQuantity);
+            $maxAllowed = max(1, min($availableBudget, CartItem::MAX_QUANTITY_PER_LINE));
+
+            if ($duplicate !== null) {
+                $duplicate->quantity = min($maxAllowed, $duplicate->quantity + $item->quantity);
+                $duplicate->save();
+                $item->delete();
+
+                return $duplicate;
+            }
+
+            $nextQuantity = $requestedQuantity !== null
+                ? min($maxAllowed, max(1, $requestedQuantity))
+                : min($maxAllowed, $item->quantity);
+
+            $item->selected_color = $resolvedColor;
+            $item->selected_size = $resolvedSize;
+            $item->quantity = $nextQuantity;
+            $item->save();
+
+            return $item;
+        });
+    }
+
     public function removeItem(Request $request, CartItem $item): void
     {
         $this->ensureItemBelongsToCurrentCart($request, $item);
@@ -324,6 +398,9 @@ final class CartService
                 'imageAlt' => $image?->alt_text ?: $product->name,
                 'selectedColor' => $cartItem->selected_color,
                 'selectedSize' => $cartItem->selected_size,
+                'availableColors' => $product->available_colors ?? [],
+                'availableSizes' => $product->available_sizes ?? [],
+                'variantStocks' => $product->variant_stocks,
             ];
         }
 

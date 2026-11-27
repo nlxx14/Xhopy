@@ -12,6 +12,8 @@ use App\Domain\Catalog\Support\StorefrontShell;
 use App\Domain\Customer\Services\WishlistService;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Storefront\CatalogIndexRequest;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -28,12 +30,40 @@ class CatalogController extends Controller
         StorefrontShell $shell,
     ): Response {
         $filters = $request->filters();
-        $paginator = $listing->paginate($filters);
-        $wishlistedIds = $wishlist->wishlistedProductIds($request->user());
-
         $activeCategory = $filters->category !== null
             ? Category::query()->active()->where('slug', $filters->category)->first()
             : null;
+
+        return $this->renderCatalog($request, $filters, $activeCategory, $listing, $presenter, $wishlist, $shell);
+    }
+
+    public function category(
+        string $categorySlug,
+        CatalogIndexRequest $request,
+        ProductListingQuery $listing,
+        ProductPresenter $presenter,
+        WishlistService $wishlist,
+        StorefrontShell $shell,
+    ): Response {
+        $activeCategory = Category::query()->active()->where('slug', $categorySlug)->firstOrFail();
+        $validated = $request->validated();
+        $validated['category'] = $activeCategory->slug;
+        $filters = CatalogFilters::fromValidated($validated);
+
+        return $this->renderCatalog($request, $filters, $activeCategory, $listing, $presenter, $wishlist, $shell);
+    }
+
+    private function renderCatalog(
+        Request $request,
+        CatalogFilters $filters,
+        ?Category $activeCategory,
+        ProductListingQuery $listing,
+        ProductPresenter $presenter,
+        WishlistService $wishlist,
+        StorefrontShell $shell,
+    ): Response {
+        $paginator = $listing->paginate($filters);
+        $wishlistedIds = $wishlist->wishlistedProductIds($request->user());
 
         return Inertia::render('catalog/Index', [
             'announcement' => null,
@@ -53,10 +83,47 @@ class CatalogController extends Controller
                 'total' => $paginator->total(),
             ],
             'filters' => $this->filtersPayload($filters),
+            'maxCatalogPrice' => $listing->maxPublishedPrice(),
             'sortOptions' => ProductSort::options(),
             'perPageOptions' => CatalogFilters::PER_PAGE_OPTIONS,
             'activeCategory' => $activeCategory === null ? null : $presenter->category($activeCategory),
         ]);
+    }
+
+    public function suggestions(
+        Request $request,
+        ProductListingQuery $listing,
+        ProductPresenter $presenter,
+    ): JsonResponse {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $query = trim((string) ($validated['q'] ?? ''));
+        if ($query === '') {
+            return response()->json(['items' => []]);
+        }
+
+        $items = $listing
+            ->top(new CatalogFilters(query: $query), 6)
+            ->map(function (Product $product) use ($presenter): array {
+                $summary = $presenter->summary($product);
+
+                return [
+                    'id' => $summary['id'],
+                    'name' => $summary['name'],
+                    'slug' => $summary['slug'],
+                    'categoryName' => $summary['categoryName'],
+                    'priceFormatted' => $summary['priceFormatted'],
+                    'imageUrl' => $summary['imageUrl'],
+                    'inStock' => $summary['inStock'],
+                    'url' => route('products.show', $product->slug),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return response()->json(['items' => $items]);
     }
 
     /**
@@ -70,6 +137,8 @@ class CatalogController extends Controller
             'minPrice' => $filters->minPrice,
             'maxPrice' => $filters->maxPrice,
             'inStock' => $filters->inStockOnly,
+            'onSale' => $filters->onSaleOnly,
+            'minRating' => $filters->minRating,
             'sort' => $filters->sort->value,
             'perPage' => $filters->perPage,
         ];

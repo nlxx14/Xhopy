@@ -29,6 +29,10 @@ import {
 } from '@shared/components/ui/alert';
 import { Badge } from '@shared/components/ui/badge';
 import { Button } from '@shared/components/ui/button';
+import {
+    CustomDropdown,
+    type CustomDropdownOption,
+} from '@shared/components/ui/custom-dropdown';
 import type { BreadcrumbItem } from '@shared/types';
 import { home } from '@/routes';
 import { clear as clearCartRoute, index as cartIndex } from '@/routes/cart';
@@ -76,6 +80,87 @@ function handleUpdateQuantity(item: CartLineItem, quantity: number): void {
     router.patch(
         updateCartItemRoute.url(item.id),
         { quantity },
+        { preserveScroll: true },
+    );
+}
+
+function resolveCartVariantStock(
+    item: CartLineItem,
+    color: string | null | undefined,
+    size: string | null | undefined,
+): number {
+    if (!item.variantStocks || Object.keys(item.variantStocks).length === 0) {
+        return item.availableStock;
+    }
+
+    const key = `${(color ?? '').trim()}|${(size ?? '').trim()}`;
+    if (Object.prototype.hasOwnProperty.call(item.variantStocks, key)) {
+        return Math.max(0, Number(item.variantStocks[key] ?? 0) || 0);
+    }
+
+    const lowerKey = key.toLowerCase();
+    for (const [existingKey, qty] of Object.entries(item.variantStocks)) {
+        if (existingKey.toLowerCase() === lowerKey) {
+            return Math.max(0, Number(qty ?? 0) || 0);
+        }
+    }
+
+    return 0;
+}
+
+function colorDropdownOptions(item: CartLineItem): CustomDropdownOption[] {
+    const colors = item.availableColors ?? [];
+    const hasCustom =
+        item.variantStocks !== null &&
+        item.variantStocks !== undefined &&
+        Object.keys(item.variantStocks).length > 0;
+
+    return colors.map((color) => {
+        if (!hasCustom) {
+            return { value: color, label: color };
+        }
+        const stock = resolveCartVariantStock(item, color, item.selectedSize);
+        return {
+            value: color,
+            label: color,
+            badge: stock > 0 ? `${stock} left` : 'Out of stock',
+            disabled: stock <= 0,
+        };
+    });
+}
+
+function sizeDropdownOptions(item: CartLineItem): CustomDropdownOption[] {
+    const sizes = item.availableSizes ?? [];
+    const hasCustom =
+        item.variantStocks !== null &&
+        item.variantStocks !== undefined &&
+        Object.keys(item.variantStocks).length > 0;
+
+    return sizes.map((size) => {
+        if (!hasCustom) {
+            return { value: size, label: size };
+        }
+        const stock = resolveCartVariantStock(item, item.selectedColor, size);
+        return {
+            value: size,
+            label: size,
+            badge: stock > 0 ? `${stock} left` : 'Out of stock',
+            disabled: stock <= 0,
+        };
+    });
+}
+
+function handleUpdateVariant(
+    item: CartLineItem,
+    nextColor: string | null | undefined,
+    nextSize: string | null | undefined,
+): void {
+    router.patch(
+        updateCartItemRoute.url(item.id),
+        {
+            selected_color: nextColor ?? undefined,
+            selected_size: nextSize ?? undefined,
+        },
         { preserveScroll: true },
     );
 }
@@ -235,18 +320,70 @@ function handleClearCart(): void {
 
                                 <div
                                     v-if="
-                                        item.selectedColor || item.selectedSize
+                                        (item.availableColors &&
+                                            item.availableColors.length > 0) ||
+                                        (item.availableSizes &&
+                                            item.availableSizes.length > 0) ||
+                                        item.selectedColor ||
+                                        item.selectedSize
                                     "
-                                    class="flex flex-wrap gap-1.5 pt-0.5"
+                                    class="flex flex-wrap items-center gap-2 pt-1"
                                 >
+                                    <CustomDropdown
+                                        v-if="
+                                            item.availableColors &&
+                                            item.availableColors.length > 0
+                                        "
+                                        :model-value="
+                                            item.selectedColor ??
+                                            item.availableColors[0] ??
+                                            ''
+                                        "
+                                        :options="colorDropdownOptions(item)"
+                                        label="Color"
+                                        :aria-label="`Change color for ${item.name}`"
+                                        align="start"
+                                        class="h-8 min-w-[9rem] rounded-lg px-2.5 text-xs"
+                                        @update:model-value="
+                                            handleUpdateVariant(
+                                                item,
+                                                $event,
+                                                item.selectedSize,
+                                            )
+                                        "
+                                    />
                                     <span
-                                        v-if="item.selectedColor"
+                                        v-else-if="item.selectedColor"
                                         class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[11px] font-medium text-foreground"
                                     >
                                         Color: {{ item.selectedColor }}
                                     </span>
+
+                                    <CustomDropdown
+                                        v-if="
+                                            item.availableSizes &&
+                                            item.availableSizes.length > 0
+                                        "
+                                        :model-value="
+                                            item.selectedSize ??
+                                            item.availableSizes[0] ??
+                                            ''
+                                        "
+                                        :options="sizeDropdownOptions(item)"
+                                        label="Size"
+                                        :aria-label="`Change size for ${item.name}`"
+                                        align="start"
+                                        class="h-8 min-w-[8.5rem] rounded-lg px-2.5 text-xs"
+                                        @update:model-value="
+                                            handleUpdateVariant(
+                                                item,
+                                                item.selectedColor,
+                                                $event,
+                                            )
+                                        "
+                                    />
                                     <span
-                                        v-if="item.selectedSize"
+                                        v-else-if="item.selectedSize"
                                         class="rounded-md border border-border bg-secondary/60 px-2 py-0.5 text-[11px] font-medium text-foreground"
                                     >
                                         Size: {{ item.selectedSize }}

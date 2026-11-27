@@ -53,12 +53,14 @@ const props = withDefaults(
         products: ProductSummary[];
         pagination: PaginationMeta;
         filters: CatalogFilterState;
+        maxCatalogPrice?: number;
         sortOptions: SortOption[];
         perPageOptions?: number[];
         activeCategory?: CategorySummary | null;
     }>(),
     {
         announcement: null,
+        maxCatalogPrice: 20000,
         perPageOptions: () => [12, 24, 48],
         activeCategory: null,
     },
@@ -96,7 +98,9 @@ const hasActiveFilters = computed(
         Boolean(props.filters.category) ||
         Boolean(props.filters.minPrice) ||
         Boolean(props.filters.maxPrice) ||
-        props.filters.inStock,
+        props.filters.inStock ||
+        props.filters.onSale ||
+        props.filters.minRating !== null,
 );
 
 function buildQuery(
@@ -113,6 +117,8 @@ function buildQuery(
         min_price: merged.minPrice || undefined,
         max_price: merged.maxPrice || undefined,
         in_stock: merged.inStock ? 1 : undefined,
+        on_sale: merged.onSale ? 1 : undefined,
+        min_rating: merged.minRating ?? undefined,
         sort:
             merged.sort && merged.sort !== 'featured' ? merged.sort : undefined,
         per_page:
@@ -148,6 +154,8 @@ function handleApplyFilters(next: AppliedFilters): void {
         minPrice: next.minPrice,
         maxPrice: next.maxPrice,
         inStock: next.inStock,
+        onSale: next.onSale,
+        minRating: next.minRating,
         page: 1,
     });
 }
@@ -277,6 +285,7 @@ function handleAddToCart(product: ProductSummary): void {
                                     <ProductFilters
                                         :filters="filters"
                                         :categories="categories"
+                                        :max-catalog-price="maxCatalogPrice"
                                         id-prefix="mobile-filters"
                                         @apply="handleApplyFilters"
                                         @reset="handleResetFilters"
@@ -390,6 +399,38 @@ function handleAddToCart(product: ProductSummary): void {
                     </button>
                 </Badge>
 
+                <Badge
+                    v-if="filters.onSale"
+                    variant="secondary"
+                    class="gap-1.5 px-2.5 py-1 text-xs"
+                >
+                    <span>On sale only</span>
+                    <button
+                        type="button"
+                        class="rounded-full hover:text-foreground"
+                        aria-label="Remove on-sale filter"
+                        @click="navigate({ onSale: false, page: 1 })"
+                    >
+                        <X class="size-3" aria-hidden="true" />
+                    </button>
+                </Badge>
+
+                <Badge
+                    v-if="filters.minRating"
+                    variant="secondary"
+                    class="gap-1.5 px-2.5 py-1 text-xs"
+                >
+                    <span>{{ filters.minRating }}★ &amp; up</span>
+                    <button
+                        type="button"
+                        class="rounded-full hover:text-foreground"
+                        aria-label="Remove rating filter"
+                        @click="navigate({ minRating: null, page: 1 })"
+                    >
+                        <X class="size-3" aria-hidden="true" />
+                    </button>
+                </Badge>
+
                 <Button
                     type="button"
                     variant="ghost"
@@ -401,19 +442,20 @@ function handleAddToCart(product: ProductSummary): void {
                 </Button>
             </div>
 
-            <!-- Main Catalog Layout: Sidebar Filters + Product Grid -->
-            <div class="grid grid-cols-1 gap-8 lg:grid-cols-12">
-                <!-- Desktop Sidebar -->
+            <!-- Main Catalog Layout: Compact Left Sidebar Filters + Product Grid -->
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-[14.5rem_1fr]">
+                <!-- Desktop Sidebar (Left Side, Compact) -->
                 <aside
                     aria-label="Catalog filters"
-                    class="hidden min-w-0 lg:col-span-3 lg:block"
+                    class="hidden min-w-0 lg:block"
                 >
                     <div
-                        class="sticky top-28 overflow-hidden rounded-2xl border border-border bg-card p-5"
+                        class="sticky top-24 overflow-hidden rounded-2xl border border-border bg-card p-4"
                     >
                         <ProductFilters
                             :filters="filters"
                             :categories="categories"
+                            :max-catalog-price="maxCatalogPrice"
                             id-prefix="desktop-filters"
                             @apply="handleApplyFilters"
                             @reset="handleResetFilters"
@@ -422,7 +464,7 @@ function handleAddToCart(product: ProductSummary): void {
                 </aside>
 
                 <!-- Product Results Column -->
-                <div class="space-y-8 lg:col-span-9">
+                <div class="min-w-0 space-y-6">
                     <div
                         class="flex items-center justify-between text-sm text-muted-foreground"
                     >
@@ -449,7 +491,7 @@ function handleAddToCart(product: ProductSummary): void {
 
                     <div
                         v-if="products.length > 0"
-                        class="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3"
+                        class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                     >
                         <ProductCard
                             v-for="product in products"
